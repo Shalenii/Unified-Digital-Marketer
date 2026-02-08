@@ -1,14 +1,15 @@
 const express = require('express');
 const cors = require('cors');
+// Load env vars if not in production (Vercel provides them automatically)
+// MUST BE AT THE TOP before other imports use process.env
+if (process.env.NODE_ENV !== 'production') {
+    require('dotenv').config();
+}
+
 const multer = require('multer');
 const path = require('path');
 const { startCron } = require('./cron'); // Renamed to startCron for clarity
 const supabase = require('./supabaseClient');
-
-// Load env vars if not in production (Vercel provides them automatically)
-if (process.env.NODE_ENV !== 'production') {
-    require('dotenv').config();
-}
 
 const app = express();
 const PORT = process.env.PORT || 3001;
