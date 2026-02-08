@@ -1,0 +1,824 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --bg-color: #0f172a;
+  --card-bg: rgba(30, 41, 59, 0.7);
+  --primary: #3b82f6;
+  --primary-hover: #2563eb;
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --border: rgba(148, 163, 184, 0.1);
+  --success: #10b981;
+  --error: #ef4444;
+  --pending: #f59e0b;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Outfit', sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-main);
+  background-image:
+    radial-gradient(circle at 10% 20%, rgba(59, 130, 246, 0.15) 0%, transparent 20%),
+    radial-gradient(circle at 90% 80%, rgba(139, 92, 246, 0.15) 0%, transparent 20%);
+  min-height: 100vh;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+header {
+  margin-bottom: 3rem;
+  text-align: center;
+}
+
+h1 {
+  font-size: 2.5rem;
+  font-weight: 700;
+  background: linear-gradient(to right, #60a5fa, #a78bfa);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  margin-bottom: 0.5rem;
+}
+
+.subtitle {
+  color: var(--text-muted);
+  font-size: 1.1rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+}
+
+@media (max-width: 768px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.card {
+  background: var(--card-bg);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 2rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.form-group {
+  margin-bottom: 1.5rem;
+}
+
+label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+input[type="text"],
+input[type="datetime-local"],
+textarea,
+input[type="file"] {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-main);
+  font-family: inherit;
+  transition: border-color 0.2s;
+}
+
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.checkbox-group {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  background: rgba(15, 23, 42, 0.5);
+  padding: 0.5rem 1rem;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  transition: all 0.2s;
+}
+
+.checkbox-label:hover {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: var(--primary);
+}
+
+.checkbox-label input:checked+span {
+  color: var(--primary);
+}
+
+button.primary-btn {
+  width: 100%;
+  padding: 1rem;
+  background: linear-gradient(135deg, var(--primary), #2563eb);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.1s, opacity 0.2s;
+}
+
+button.primary-btn:hover {
+  opacity: 0.9;
+}
+
+button.primary-btn:active {
+  transform: scale(0.98);
+}
+
+/* Post List */
+.post-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-height: 600px;
+  overflow-y: auto;
+  padding-right: 0.5rem;
+}
+
+.post-item {
+  background: rgba(15, 23, 42, 0.3);
+  padding: 1rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.post-thumb {
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.post-info {
+  flex: 1;
+}
+
+.post-caption {
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.post-meta {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
+}
+
+.status-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 99px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.status-Pending {
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--pending);
+}
+
+.status-Published {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--success);
+}
+
+.status-Failed {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--error);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.2);
+  border-radius: 4px;
+}
+
+/* ... Existing styles ... */
+
+/* Dashboard Layout */
+.dashboard-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1.5rem;
+}
+
+@media (max-width: 1024px) {
+  .dashboard-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.left-panel,
+.center-panel,
+.right-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.section-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+.section-card h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  color: var(--primary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  background: rgba(15, 23, 42, 0.5);
+  padding: 0.25rem;
+  border-radius: 8px;
+}
+
+.tabs button {
+  flex: 1;
+  padding: 0.5rem;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.tabs button.active {
+  background: var(--bg-color);
+  color: var(--text-main);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+/* Auto Source Grid */
+.auto-source-panel .image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 0.5rem;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-top: 1rem;
+}
+
+.image-item {
+  cursor: pointer;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  overflow: hidden;
+  transition: all 0.2s;
+}
+
+.image-item:hover {
+  border-color: var(--primary);
+}
+
+.image-item img {
+  width: 100%;
+  height: 80px;
+  object-fit: cover;
+  display: block;
+}
+
+.image-item span {
+  display: none;
+}
+
+/* Preview Pane */
+.preview-pane img {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* Scheduler */
+.radio-group {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.radio-group label {
+  cursor: pointer;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  transition: all 0.2s;
+}
+
+.radio-group label.active {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.radio-group input {
+  display: none;
+}
+
+.recurrence-box {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.recurrence-options {
+  margin-top: 0.5rem;
+  padding-left: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* Platform Manager */
+.platform-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.platform-item {
+  background: rgba(15, 23, 42, 0.3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem;
+  transition: all 0.2s;
+}
+
+.platform-item.active {
+  border-color: var(--primary);
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.platform-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.switch-label {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: pointer;
+  margin-bottom: 0;
+}
+
+.switch-label input {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+.switch-label .icon {
+  font-size: 1.2rem;
+}
+
+.gear-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 1.2rem;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.gear-btn:hover {
+  opacity: 1;
+}
+
+.platform-settings-dropdown {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.big-publish-btn {
+  padding: 1.5rem !important;
+  font-size: 1.1rem !important;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-top: 1rem;
+}
+
+/* Calendar Styles */
+.calendar-container {
+  width: 100%;
+}
+
+.calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.calendar-header h3 {
+  margin: 0;
+  color: var(--primary);
+}
+
+.calendar-header button {
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.calendar-header button:hover {
+  background: var(--bg-color);
+  border-color: var(--primary);
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.day-name {
+  background: rgba(15, 23, 42, 0.8);
+  padding: 1rem;
+  text-align: center;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.calendar-day {
+  background: rgba(30, 41, 59, 0.4);
+  min-height: 100px;
+  padding: 0.5rem;
+  position: relative;
+  transition: background 0.2s;
+}
+
+.calendar-day:hover {
+  background: rgba(30, 41, 59, 0.8);
+}
+
+.calendar-day.empty {
+  background: rgba(15, 23, 42, 0.3);
+}
+
+.calendar-day.today {
+  background: rgba(59, 130, 246, 0.1);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.day-number {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: var(--text-muted);
+}
+
+.calendar-day.today .day-number {
+  color: var(--primary);
+}
+
+.day-events {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.event-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.event-dot.status-Pending {
+  background: var(--pending);
+}
+
+.event-dot.status-Published {
+  background: var(--success);
+}
+
+.event-dot.status-Failed {
+  background: var(--error);
+}
+
+.post-count {
+  width: 100%;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* NEAT DASHBOARD LAYOUT (Redesign) */
+
+/* NEAT DASHBOARD LAYOUT (Redesign) */
+.dashboard-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.row-top {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+}
+
+@media (max-width: 768px) {
+  .row-top {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+.col-source,
+.col-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  height: 100%;
+  /* Ensure column takes full grid cell height */
+}
+
+/* Ensure section cards take full height to match each other */
+.col-source .section-card,
+.col-composer .section-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border-radius: 24px;
+  /* Curvier */
+}
+
+/* Curvy look for all cards */
+.section-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 2rem;
+}
+
+.preview-pane-small img {
+  width: 100%;
+  height: 140px;
+  object-fit: cover;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  margin-top: 0;
+  /* Let flex gap handle spacing */
+}
+
+/* Platform Cards - Horizontal Grid */
+.row-platforms .platform-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.platform-item {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--border);
+  padding: 1rem 1.5rem;
+  border-radius: 20px;
+  /* Curvier */
+  transition: all 0.3s;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Specific Platform Colors */
+.platform-item:has(span:contains("Twitter")) {
+  border-left: 4px solid #1DA1F2;
+}
+
+/* Fallback logic needed if :has not supported fully, sticking to JS class or generic */
+/* Actually, let's keep it generic accent or add specific classes in React. 
+   For now, I'll stick to a generic "Active" glow, unless I modify PlatformManager to add classNames.
+   Let's modify PlatformManager to add classNames for specific colors.
+*/
+
+/* Active State for Cards */
+.platform-item.active {
+  background: rgba(15, 23, 42, 0.9);
+  border-color: var(--primary);
+  box-shadow: 0 0 15px rgba(59, 130, 246, 0.1);
+}
+
+.platform-item label {
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.platform-header {
+  margin-bottom: 0.5rem;
+}
+
+/* Scheduler & Action Row */
+.row-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.row-bottom .scheduler-section {
+  width: 100%;
+}
+
+.big-publish-btn {
+  background: linear-gradient(90deg, #10b981, #3b82f6);
+  font-size: 1.2rem;
+  letter-spacing: 2px;
+}
+
+/* NAV BUTTONS */
+.main-nav {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.nav-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 0.75rem 1.5rem;
+  border-radius: 99px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s;
+}
+
+.nav-btn.active {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
+}
+
+/* Correct Platform Colors */
+.platform-item.twitter {
+  border-left: 4px solid #1DA1F2;
+}
+
+.platform-item.facebook {
+  border-left: 4px solid #1877F2;
+}
+
+.platform-item.instagram {
+  border-left: 4px solid #E1306C;
+}
+
+.platform-item.whatsapp {
+  border-left: 4px solid #25D366;
+}
+
+.platform-item.telegram {
+  border-left: 4px solid #0088cc;
+}
+
+/* Action Buttons */
+.icon-btn {
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 1rem;
+}
+
+.icon-btn:hover {
+  background: var(--bg-color);
+  color: var(--primary);
+  border-color: var(--primary);
+  transform: scale(1.1);
+}
+
+.icon-btn.delete-btn:hover {
+  color: var(--error);
+  border-color: var(--error);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+/* Options Dropdown */
+.options-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 0.5rem;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.5rem;
+  min-width: 180px;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+  z-index: 50;
+  backdrop-filter: blur(10px);
+  animation: slideDown 0.1s ease-out;
+}
+
+.menu-item {
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.2s;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-main);
+}
+
+.menu-item:hover {
+  background: rgba(59, 130, 246, 0.1);
+  color: var(--primary);
+}
+
+.menu-item.delete:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--error);
+}
