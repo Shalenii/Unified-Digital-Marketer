@@ -33,12 +33,13 @@ const handleCron = async (req, res) => {
         res.status(200).json({ message: 'Cron job executed successfully' });
     } catch (error) {
         console.error('Cron job failed:', error);
-        res.status(500).json({ error: 'Internal Server Error' });
+        res.status(500).json({ error: 'Internal Server Error', details: error.message });
     }
 };
 
 app.get('/api/cron', handleCron);
 app.get('/cron', handleCron); // Fallback if /api is stripped
+
 
 
 // Configure Multer to use Memory Storage (Serverless friendly)
@@ -221,6 +222,22 @@ app.patch('/api/posts/:id', async (req, res) => {
 
     if (error) return res.status(500).json({ error: error.message });
     res.json({ message: 'Post updated' });
+});
+
+// DEBUG: Catch-all to inspect what's happening
+app.all('*', (req, res) => {
+    res.status(404).json({
+        error: 'Route not found (Catch-all)',
+        request_url: req.url,
+        request_originalUrl: req.originalUrl,
+        request_method: req.method,
+        registered_routes: app._router.stack
+            .filter(r => r.route)
+            .map(r => ({
+                path: r.route.path,
+                methods: Object.keys(r.route.methods)
+            }))
+    });
 });
 
 // Export app for Vercel
