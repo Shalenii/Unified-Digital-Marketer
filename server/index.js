@@ -8,7 +8,7 @@ if (process.env.NODE_ENV !== 'production') {
 
 const multer = require('multer');
 const path = require('path');
-const { startCron } = require('./cron'); // Renamed to startCron for clarity
+const { startCron, runCronJob } = require('./cron'); // Renamed to startCron for clarity
 const supabase = require('./supabaseClient');
 
 const app = express();
@@ -17,6 +17,18 @@ const PORT = process.env.PORT || 3001;
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// --- CRON Endpoint for Vercel Cron ---
+app.get('/api/cron', async (req, res) => {
+    console.log('Received cron request');
+    try {
+        await runCronJob();
+        res.status(200).json({ message: 'Cron job executed successfully' });
+    } catch (error) {
+        console.error('Cron job failed:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
 
 // Configure Multer to use Memory Storage (Serverless friendly)
 // We will upload to Supabase Storage directly from the buffer.
