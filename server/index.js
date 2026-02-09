@@ -18,8 +18,15 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+// DEBUG: Log all requests
+app.use((req, res, next) => {
+    console.log(`[Request] ${req.method} ${req.url}`);
+    next();
+});
+
 // --- CRON Endpoint for Vercel Cron ---
-app.get('/api/cron', async (req, res) => {
+// Try both /api/cron and /cron in case rewrite is behaving unexpectedly
+const handleCron = async (req, res) => {
     console.log('Received cron request');
     try {
         await runCronJob();
@@ -28,7 +35,11 @@ app.get('/api/cron', async (req, res) => {
         console.error('Cron job failed:', error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
-});
+};
+
+app.get('/api/cron', handleCron);
+app.get('/cron', handleCron); // Fallback if /api is stripped
+
 
 // Configure Multer to use Memory Storage (Serverless friendly)
 // We will upload to Supabase Storage directly from the buffer.
