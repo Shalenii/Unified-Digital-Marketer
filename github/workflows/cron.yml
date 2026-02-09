@@ -1,0 +1,13 @@
+name: Trigger Cron
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  cron:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call Cron Endpoint
+        run: curl -I https://unified-digital-marketer.vercel.app/api/cron
