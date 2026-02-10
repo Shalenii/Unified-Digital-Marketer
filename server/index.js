@@ -161,6 +161,8 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
 
                 } catch (pubErr) {
                     console.error('[Background] Immediate publish failed:', pubErr);
+                    const fs = require('fs');
+                    fs.appendFileSync('server-error.log', `[${new Date().toISOString()}] Immediate publish failed: ${pubErr.stack || pubErr}\n`);
                     await supabase
                         .from('posts')
                         .update({ status: 'Failed' })
@@ -224,19 +226,23 @@ app.patch('/api/posts/:id', async (req, res) => {
     res.json({ message: 'Post updated' });
 });
 
+
+
+app.get('/', (req, res) => {
+    res.send('Server is running');
+});
+
 // DEBUG: Catch-all to inspect what's happening
-app.all('*', (req, res) => {
+// DEBUG: Catch-all to inspect what's happening
+// In Express 5, '*' is not supported in app.all like this. Use app.use() for 404 fallback.
+app.use((req, res) => {
     res.status(404).json({
         error: 'Route not found (Catch-all)',
         request_url: req.url,
         request_originalUrl: req.originalUrl,
         request_method: req.method,
-        registered_routes: app._router.stack
-            .filter(r => r.route)
-            .map(r => ({
-                path: r.route.path,
-                methods: Object.keys(r.route.methods)
-            }))
+        // app._router.stack might be different in structure, let's omit detailed route dumping to be safe
+        // or just dump simple info
     });
 });
 

@@ -1,0 +1,14 @@
+name: Trigger Cron
+
+on:
+  schedule:
+    # Run every 15 minutes (GitHub Actions minimum interval is roughly 5-10 mins)
+    - cron: '*/15 * * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  cron:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call Cron Endpoint
+        run: curl -I https://unified-digital-marketer.vercel.app/api/cron

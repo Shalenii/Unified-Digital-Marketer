@@ -22,11 +22,5 @@
             "source": "/(.*)",
             "destination": "/client/$1"
         }
-    ],
-    "crons": [
-        {
-            "path": "/api/cron",
-            "schedule": "* * * * *"
-        }
     ]
 }
