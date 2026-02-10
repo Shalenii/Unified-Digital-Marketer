@@ -165,6 +165,42 @@ const publishToTelegram = async (caption, imageBuffer) => {
     }
 };
 
+const publishToWhatsApp = async (caption, imageUrl) => {
+    const token = process.env.WHATSAPP_ACCESS_TOKEN;
+    const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    const toPhone = process.env.WHATSAPP_TO_PHONE;
+
+    if (!token || !phoneId || !toPhone) {
+        throw new Error('WhatsApp credentials (TOKEN, PHONE_ID, TO_PHONE) not found in env');
+    }
+
+    try {
+        // WhatsApp Cloud API - Send Image Message
+        const response = await axios.post(
+            `https://graph.facebook.com/v18.0/${phoneId}/messages`,
+            {
+                messaging_product: 'whatsapp',
+                to: toPhone,
+                type: 'image',
+                image: {
+                    link: imageUrl,
+                    caption: caption
+                }
+            },
+            {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
+
+        return { success: true, platform: 'WhatsApp', id: response.data.messages[0].id };
+    } catch (error) {
+        throw new Error(`WhatsApp failed: ${error.response?.data?.error?.message || error.message}`);
+    }
+};
+
 const publish = async (platform, post) => {
     try {
         // Fetch Image from Supabase
@@ -179,6 +215,9 @@ const publish = async (platform, post) => {
             case 'instagram':
                 // Instgram needs URL, not buffer
                 return await publishToInstagram(post.caption, url);
+            case 'whatsapp':
+                // WhatsApp needs URL
+                return await publishToWhatsApp(post.caption, url);
             case 'telegram':
                 return await publishToTelegram(post.caption, buffer);
             default:
