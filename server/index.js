@@ -97,12 +97,33 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
             const fileName = `${Date.now()}_${req.file.originalname}`;
             // Upload to Supabase Storage
             const publicUrl = await uploadToSupabase(req.file.buffer, fileName, req.file.mimetype);
-            // We store the full Public URL or the path. Storing the URL is easier for client.
-            image_path = fileName; // We store filename to keep DB clean, client constructs URL or we return it.
-            // Actually, for Supabase integration, let's store the FILENAME, and client constructs URL using bucket.
-            // OR store full URL. Let's store FILENAME to match existing logic slightly better, 
-            // but the Client needs to know it's a Supabase file.
-            // Let's store the FILENAME.
+            image_path = fileName;
+        } else if (source_mode === 'Auto' && image_path) {
+            // AUTO MODE FIX:
+            // image_path from client is just "2026-02-11/image.jpg" (local server path)
+            // We must read this file and upload to Supabase so everything is unified.
+            const fs = require('fs');
+            const localFilePath = path.join(__dirname, 'source_content', image_path);
+
+            if (fs.existsSync(localFilePath)) {
+                console.log(`[Auto Mode] Uploading local file to Supabase: ${localFilePath}`);
+                const fileBuffer = fs.readFileSync(localFilePath);
+                // Get mime type (simple check or default to jpeg)
+                const ext = path.extname(localFilePath).toLowerCase();
+                const mimeType = ext === '.png' ? 'image/png' : 'image/jpeg';
+
+                const fileName = `${Date.now()}_auto_${path.basename(localFilePath)}`;
+                await uploadToSupabase(fileBuffer, fileName, mimeType);
+
+                // Update image_path to the new Supabase filename
+                image_path = fileName;
+            } else {
+                console.warn(`[Auto Mode] Local file not found: ${localFilePath}`);
+                // return res.status(400).json({ error: 'Source image not found on server' });
+                // We let it proceed, but likely it will fail later or just store the broken path.
+                // Better to fail early?
+                return res.status(400).json({ error: `Source image not found: ${image_path}` });
+            }
         }
 
         if (!image_path || !scheduled_time || !platforms) {
