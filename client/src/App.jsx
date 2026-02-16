@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import PostForm from './PostForm';
 import PostList from './PostList';
+import Settings from './components/Settings';
 
 function App() {
   const [currentPage, setCurrentPage] = useState('create'); // 'create' | 'history'
@@ -30,12 +31,19 @@ function App() {
           >
             📅 History & Schedule
           </button>
+          <button
+            className={`nav-btn ${currentPage === 'settings' ? 'active' : ''}`}
+            onClick={() => setCurrentPage('settings')}
+          >
+            ⚙️ Settings
+          </button>
         </nav>
       </header>
 
       <main>
         {currentPage === 'create' && <PostForm onPostCreated={handlePostCreated} />}
         {currentPage === 'history' && <PostList refreshTrigger={refreshTrigger} />}
+        {currentPage === 'settings' && <Settings />}
       </main>
     </div>
   );

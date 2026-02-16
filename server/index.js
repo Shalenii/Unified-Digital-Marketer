@@ -10,6 +10,10 @@ const multer = require('multer');
 const path = require('path');
 const { startCron, runCronJob } = require('./cron'); // Renamed to startCron for clarity
 const supabase = require('./supabaseClient');
+const configService = require('./services/configService');
+
+// Initialize settings
+configService.loadSettings().catch(err => console.error('Failed to load settings:', err));
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -248,6 +252,31 @@ app.patch('/api/posts/:id', async (req, res) => {
 });
 
 
+
+// --- Settings Endpoints ---
+
+// GET /api/settings
+app.get('/api/settings', async (req, res) => {
+    try {
+        const settings = await configService.getAll();
+        res.json(settings);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST /api/settings
+app.post('/api/settings', async (req, res) => {
+    const { key, value } = req.body;
+    if (!key) return res.status(400).json({ error: 'Key is required' });
+
+    try {
+        await configService.set(key, value);
+        res.json({ success: true, message: 'Setting updated' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 
 app.get('/', (req, res) => {
     res.send('Server is running');

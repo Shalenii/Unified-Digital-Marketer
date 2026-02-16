@@ -1,7 +1,25 @@
+const configService = require('./configService');
+const supabase = require('../supabaseClient');
 const axios = require('axios');
 const FormData = require('form-data');
 const { TwitterApi } = require('twitter-api-v2');
-const supabase = require('../supabaseClient');
+
+// ... (existing code)
+
+// Initialize Twitter Client (v2)
+const getTwitterClient = () => {
+    const appKey = configService.get('TWITTER_APP_KEY');
+    if (!appKey) return null;
+    return new TwitterApi({
+        appKey: appKey,
+        appSecret: configService.get('TWITTER_APP_SECRET'),
+        accessToken: configService.get('TWITTER_ACCESS_TOKEN'),
+        accessSecret: configService.get('TWITTER_ACCESS_SECRET'),
+    });
+};
+
+// ... (rest of the file needs updates too)
+
 
 // Helper: Download Image from Supabase to Buffer
 const downloadImage = async (imagePath) => {
@@ -29,16 +47,7 @@ const downloadImage = async (imagePath) => {
     }
 };
 
-// Initialize Twitter Client (v2)
-const getTwitterClient = () => {
-    if (!process.env.TWITTER_APP_KEY) return null;
-    return new TwitterApi({
-        appKey: process.env.TWITTER_APP_KEY,
-        appSecret: process.env.TWITTER_APP_SECRET,
-        accessToken: process.env.TWITTER_ACCESS_TOKEN,
-        accessSecret: process.env.TWITTER_ACCESS_SECRET,
-    });
-};
+
 
 const publishToTwitter = async (caption, imageBuffer, imageType) => {
     const client = getTwitterClient();
@@ -63,8 +72,8 @@ const publishToTwitter = async (caption, imageBuffer, imageType) => {
 };
 
 const publishToFacebook = async (caption, imageBuffer) => {
-    const token = process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
-    const pageId = process.env.FACEBOOK_PAGE_ID;
+    const token = configService.get('FACEBOOK_PAGE_ACCESS_TOKEN');
+    const pageId = configService.get('FACEBOOK_PAGE_ID');
 
     if (!token || !pageId) throw new Error('Facebook credentials not found in env');
 
@@ -91,8 +100,8 @@ const publishToInstagram = async (caption, imageUrl) => {
     // Instagram Graph API *REQUIRES* a public URL. 
     // Since we are using Supabase, we HAVE a public URL! Perfect.
 
-    const accountId = process.env.INSTAGRAM_ACCOUNT_ID;
-    const token = process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
+    const accountId = configService.get('INSTAGRAM_ACCOUNT_ID');
+    const token = configService.get('FACEBOOK_PAGE_ACCESS_TOKEN');
 
     if (!accountId || !token) {
         throw new Error('Missing Instagram Credentials');
@@ -138,8 +147,8 @@ const publishToInstagram = async (caption, imageUrl) => {
 };
 
 const publishToTelegram = async (caption, imageBuffer) => {
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
-    const chatId = process.env.TELEGRAM_CHAT_ID;
+    const botToken = configService.get('TELEGRAM_BOT_TOKEN');
+    const chatId = configService.get('TELEGRAM_CHAT_ID');
 
     if (!botToken || !chatId) throw new Error('Telegram credentials not found in env');
 
@@ -166,9 +175,9 @@ const publishToTelegram = async (caption, imageBuffer) => {
 };
 
 const publishToWhatsApp = async (caption, imageUrl) => {
-    const token = process.env.WHATSAPP_ACCESS_TOKEN;
-    const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-    const toPhone = process.env.WHATSAPP_TO_PHONE;
+    const token = configService.get('WHATSAPP_ACCESS_TOKEN');
+    const phoneId = configService.get('WHATSAPP_PHONE_NUMBER_ID');
+    const toPhone = configService.get('WHATSAPP_TO_PHONE');
 
     if (!token || !phoneId || !toPhone) {
         throw new Error('WhatsApp credentials (TOKEN, PHONE_ID, TO_PHONE) not found in env');
