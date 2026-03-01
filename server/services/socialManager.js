@@ -3,8 +3,7 @@ const supabase = require('../supabaseClient');
 const axios = require('axios');
 const FormData = require('form-data');
 const { TwitterApi } = require('twitter-api-v2');
-const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
+// WhatsApp dependencies will be lazy-loaded in initializeWhatsApp
 
 // --- WhatsApp Client Initialization ---
 let whatsappClient = null;
@@ -21,6 +20,9 @@ const initializeWhatsApp = () => {
     }
 
     try {
+        const { Client, LocalAuth } = require('whatsapp-web.js');
+        const qrcode = require('qrcode-terminal');
+
         console.log('[WhatsApp] Initializing client...');
         whatsappClient = new Client({
             authStrategy: new LocalAuth({ dataPath: './whatsapp-session' }),
@@ -410,6 +412,7 @@ const publishToWhatsApp = async (caption, imageBuffer, contentType, originalFile
     }
 
     try {
+        const { MessageMedia } = require('whatsapp-web.js');
         const chats = await whatsappClient.getChats();
         const base64Image = imageBuffer.toString('base64');
         const media = new MessageMedia(contentType, base64Image, originalFilename || 'image.jpg');
