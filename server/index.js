@@ -104,11 +104,20 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
             // Sanitize filename: remove spaces and special characters
             const sanitizedName = req.file.originalname.replace(/[^a-zA-Z0-9.]/g, '_');
             const fileName = `${Date.now()}_${sanitizedName}`;
-            const filePath = path.join(__dirname, 'uploads', fileName);
             const fs = require('fs');
-            fs.writeFileSync(filePath, req.file.buffer);
-            console.log(`[Storage] Saved file locally: ${filePath}`);
-            image_path = fileName;
+
+            if (process.env.VERCEL) {
+                // Production: Upload to Supabase Storage (Read-only filesystem)
+                image_path = await uploadToSupabase(req.file.buffer, fileName, req.file.mimetype);
+            } else {
+                // Local: Save to uploads folder
+                const filePath = path.join(__dirname, 'uploads', fileName);
+                if (!fs.existsSync(path.join(__dirname, 'uploads'))) {
+                    fs.mkdirSync(path.join(__dirname, 'uploads'), { recursive: true });
+                }
+                fs.writeFileSync(filePath, req.file.buffer);
+                image_path = fileName;
+            }
         } else if (source_mode === 'Auto' && image_path) {
             // AUTO MODE FIX:
             // image_path from client is just "2026-02-11/image.jpg" (local server path)
@@ -123,13 +132,14 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
                 const ext = path.extname(localFilePath).toLowerCase();
                 const mimeType = ext === '.png' ? 'image/png' : 'image/jpeg';
 
-                const fileName = `${Date.now()}_auto_${path.basename(localFilePath)}`;
-                const newPath = path.join(__dirname, 'uploads', fileName);
-                fs.writeFileSync(newPath, fileBuffer);
-                console.log(`[Auto Mode] Saved local file: ${newPath}`);
-
-                // Update image_path to the new filename for the public tunnel
-                image_path = fileName;
+                if (process.env.VERCEL) {
+                    image_path = await uploadToSupabase(fileBuffer, `${Date.now()}_auto_${path.basename(localFilePath)}`, mimeType);
+                } else {
+                    const fileName = `${Date.now()}_auto_${path.basename(localFilePath)}`;
+                    const newPath = path.join(__dirname, 'uploads', fileName);
+                    fs.writeFileSync(newPath, fileBuffer);
+                    image_path = fileName;
+                }
             } else {
                 console.warn(`[Auto Mode] Local file not found: ${localFilePath}`);
                 // return res.status(400).json({ error: 'Source image not found on server' });

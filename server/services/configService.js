@@ -1,4 +1,4 @@
-const { Client } = require('pg');
+const { Pool } = require('pg');
 
 class ConfigService {
     constructor() {
@@ -10,27 +10,23 @@ class ConfigService {
             console.warn('[ConfigService] WARNING: No DATABASE_URL found in environment.');
         }
 
-        this.pgClient = new Client({
+        this.pool = new Pool({
             connectionString,
-            ssl: { rejectUnauthorized: false }
+            ssl: { rejectUnauthorized: false },
+            max: 5, // Keep small for serverless
+            idleTimeoutMillis: 30000
         });
 
-        // Suppress connection errors crashing the process if DB is temporarily unreachable
-        this.pgClient.on('error', (err) => {
-            console.error('[ConfigService] Background PG connection error:', err.message);
-        });
-
-        this._connectPromise = this.pgClient.connect().catch(err => {
-            console.error('[ConfigService] Initial PG connection failed:', err.message);
+        // Suppress pool errors
+        this.pool.on('error', (err) => {
+            console.error('[ConfigService] PG Pool error:', err.message);
         });
     }
 
     async loadSettings() {
-        console.log('[ConfigService] Loading settings from database...');
+        console.log('[ConfigService] Loading settings from database pool...');
         try {
-            await this._connectPromise;
-
-            const res = await this.pgClient.query('SELECT * FROM settings');
+            const res = await this.pool.query('SELECT * FROM settings');
 
             if (res && res.rows) {
                 res.rows.forEach(row => {
@@ -67,12 +63,8 @@ class ConfigService {
      * @param {string} description 
      */
     async set(key, value, description = null) {
-        // Update Cache immediately for responsiveness
         this.cache[key] = value;
-
         try {
-            await this._connectPromise;
-
             const upsetQuery = `
                 INSERT INTO settings (key, value, description, updated_at)
                 VALUES ($1, $2, $3, NOW())
@@ -81,8 +73,7 @@ class ConfigService {
                 RETURNING *;
             `;
             const values = [key, value, description || null];
-
-            const res = await this.pgClient.query(upsetQuery, values);
+            const res = await this.pool.query(upsetQuery, values);
             return res.rows[0];
         } catch (error) {
             console.error(`[ConfigService] Failed to save setting ${key}:`, error);

@@ -13,61 +13,67 @@ let currentQrCode = null;
 let authStatus = 'INITIALIZING'; // 'INITIALIZING', 'QR_READY', 'AUTHENTICATED', 'FAILED'
 
 const initializeWhatsApp = () => {
-    console.log('[WhatsApp] Initializing client...');
-    whatsappClient = new Client({
-        authStrategy: new LocalAuth({ dataPath: './whatsapp-session' }),
-        webVersionCache: {
-            type: 'remote',
-            remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
-        },
-        puppeteer: {
-            args: ['--no-sandbox', '--disable-setuid-sandbox'],
-        }
-    });
+    // VERCEL CHECK: WhatsApp-web.js requires Puppeteer which doesn't work out of the box on Vercel serverless.
+    if (process.env.VERCEL) {
+        console.warn('[WhatsApp] Skipping automatic initialization on Vercel environment.');
+        authStatus = 'NOT_SUPPORTED_ON_VERCEL';
+        return;
+    }
 
-    whatsappClient.on('qr', (qr) => {
-        console.log('\n======================================================');
-        console.log('📱 WHATSAPP LOGIN REQUIRED 📱');
-        console.log('Scan the QR code below using your phone\'s WhatsApp:');
-        console.log('Open WhatsApp -> Linked Devices -> Link a Device');
-        console.log('======================================================\n');
+    try {
+        console.log('[WhatsApp] Initializing client...');
+        whatsappClient = new Client({
+            authStrategy: new LocalAuth({ dataPath: './whatsapp-session' }),
+            webVersionCache: {
+                type: 'remote',
+                remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
+            },
+            puppeteer: {
+                args: ['--no-sandbox', '--disable-setuid-sandbox'],
+            }
+        });
 
-        currentQrCode = qr;
-        authStatus = 'QR_READY';
-        qrcode.generate(qr, { small: true });
-    });
+        whatsappClient.on('qr', (qr) => {
+            currentQrCode = qr;
+            authStatus = 'QR_READY';
+            qrcode.generate(qr, { small: true });
+        });
 
-    whatsappClient.on('ready', () => {
-        console.log('[WhatsApp] Client is ready and connected!');
-        isWhatsAppReady = true;
-        authStatus = 'AUTHENTICATED';
-        currentQrCode = null;
-    });
+        whatsappClient.on('ready', () => {
+            console.log('[WhatsApp] Client is ready and connected!');
+            isWhatsAppReady = true;
+            authStatus = 'AUTHENTICATED';
+            currentQrCode = null;
+        });
 
-    whatsappClient.on('authenticated', () => {
-        console.log('[WhatsApp] Authenticated successfully!');
-        authStatus = 'AUTHENTICATED';
-        currentQrCode = null;
-    });
+        whatsappClient.on('authenticated', () => {
+            console.log('[WhatsApp] Authenticated successfully!');
+            authStatus = 'AUTHENTICATED';
+            currentQrCode = null;
+        });
 
-    whatsappClient.on('auth_failure', msg => {
-        console.error('[WhatsApp] Authentication failure:', msg);
-        isWhatsAppReady = false;
+        whatsappClient.on('auth_failure', msg => {
+            console.error('[WhatsApp] Authentication failure:', msg);
+            isWhatsAppReady = false;
+            authStatus = 'FAILED';
+        });
+
+        whatsappClient.on('disconnected', (reason) => {
+            console.log('[WhatsApp] Client was disconnected', reason);
+            isWhatsAppReady = false;
+        });
+
+        whatsappClient.initialize().catch(err => {
+            console.error('[WhatsApp] Failed to initialize:', err);
+            authStatus = 'FAILED';
+        });
+    } catch (err) {
+        console.error('[WhatsApp] Error during Client setup:', err.message);
         authStatus = 'FAILED';
-    });
-
-    whatsappClient.on('disconnected', (reason) => {
-        console.log('[WhatsApp] Client was disconnected', reason);
-        isWhatsAppReady = false;
-        // Optionally try to reconnect
-    });
-
-    whatsappClient.initialize().catch(err => {
-        console.error('[WhatsApp] Failed to initialize:', err);
-    });
+    }
 };
 
-// Initialize it immediately in background
+// Initialize it immediately in background (if allowed)
 initializeWhatsApp();
 // -------------------------------------
 
@@ -91,48 +97,38 @@ const path = require('path');
 
 // Helper: Download Image from local storage (or Supabase fallback)
 const downloadImage = async (imagePath) => {
-    // We switched to local storage in the previous conversation to avoid network blocks.
-    // The imagePath is usually just a filename like "172...jpg" inside the /uploads folder.
-
-    // Construct the public URL using the PUBLIC_URL env variable (which is required by Instagram Graph API)
-    let baseUrl = configService.get('PUBLIC_URL');
-    if (!baseUrl) {
-        console.warn('[Storage] PUBLIC_URL is missing from .env. Instagram requires a public URL to fetch the image. Using localhost as fallback.');
-        baseUrl = 'http://localhost:3001';
+    // If it's already a full URL (from Supabase or elsewhere), handle it
+    if (imagePath && (imagePath.startsWith('http://') || imagePath.startsWith('https://'))) {
+        console.log(`[Storage] Using direct URL: ${imagePath}`);
+        try {
+            const response = await axios.get(imagePath, { responseType: 'arraybuffer' });
+            return {
+                buffer: Buffer.from(response.data, 'binary'),
+                contentType: response.headers['content-type'] || 'image/jpeg',
+                url: imagePath
+            };
+        } catch (err) {
+            console.error(`[Storage] Failed to download from URL:`, err.message);
+            return { url: imagePath }; // Return URL only as fallback
+        }
     }
 
-    // Ensure trailing slash logic is clean
+    let baseUrl = configService.get('PUBLIC_URL') || 'http://localhost:3001';
     if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
-
-    // URL encode the filename to handle spaces/special characters
-    const encodedFilename = encodeURIComponent(imagePath);
-    const publicUrl = `${baseUrl}/uploads/${encodedFilename}`;
-    console.log(`[DEBUG] Attempting to read local image for URL: ${publicUrl}`);
+    const publicUrl = `${baseUrl}/uploads/${encodeURIComponent(imagePath)}`;
 
     try {
-        const _filename = path.basename(imagePath); // Clean the path to just the actual file name
+        const _filename = path.basename(imagePath);
         const localFilePath = path.join(__dirname, '..', 'uploads', _filename);
-
-        if (!fs.existsSync(localFilePath)) {
-            throw new Error(`File not found on local disk: ${localFilePath}`);
-        }
-
+        if (!fs.existsSync(localFilePath)) throw new Error(`File not found: ${localFilePath}`);
         const buffer = fs.readFileSync(localFilePath);
-
-        // Determine content type roughly based on extension
-        const ext = path.extname(_filename).toLowerCase();
-        let contentType = 'image/jpeg';
-        if (ext === '.png') contentType = 'image/png';
-        if (ext === '.webp') contentType = 'image/webp';
-        if (ext === '.gif') contentType = 'image/gif';
-
         return {
-            buffer: buffer,
-            contentType: contentType,
+            buffer,
+            contentType: path.extname(_filename).toLowerCase() === '.png' ? 'image/png' : 'image/jpeg',
             url: publicUrl
         };
     } catch (error) {
-        throw new Error(`Failed to load image from local storage: ${error.message}`);
+        throw new Error(`Failed to load image: ${error.message}`);
     }
 };
 
