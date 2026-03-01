@@ -376,7 +376,14 @@ const publishToTelegram = async (caption, imageBuffer, post) => {
 };
 
 const publishToWhatsApp = async (caption, imageBuffer, contentType, originalFilename, post) => {
-    let targetGroupNames = [];
+    const accessToken = configService.get('WHATSAPP_ACCESS_TOKEN');
+    const phoneNumberId = configService.get('WHATSAPP_PHONE_NUMBER_ID');
+
+    if (!accessToken || accessToken === 'your_whatsapp_access_token') {
+        throw new Error('WhatsApp Business API credentials (WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID) are not configured.');
+    }
+
+    // Collect target phone numbers from platform settings
     let targetNumbers = [];
 
     try {
@@ -384,87 +391,71 @@ const publishToWhatsApp = async (caption, imageBuffer, contentType, originalFile
             ? JSON.parse(post.platform_settings)
             : (post.platform_settings || {});
 
-        if (platformSettings.WhatsApp) {
-            if (platformSettings.WhatsApp.groups && platformSettings.WhatsApp.groups.length > 0) {
-                targetGroupNames = platformSettings.WhatsApp.groups;
-            }
-            if (platformSettings.WhatsApp.numbers && platformSettings.WhatsApp.numbers.trim() !== '') {
-                targetNumbers = platformSettings.WhatsApp.numbers.split(',')
-                    .map(n => n.trim().replace(/\+/g, '').replace(/[^0-9]/g, ''))
-                    .filter(Boolean);
-            }
+        if (platformSettings.WhatsApp && platformSettings.WhatsApp.numbers) {
+            targetNumbers = platformSettings.WhatsApp.numbers.split(',')
+                .map(n => n.trim().replace(/\+/g, '').replace(/[^0-9]/g, ''))
+                .filter(Boolean);
         }
     } catch (e) {
-        console.warn('[WhatsApp] Could not parse platform_settings for groups/numbers.');
+        console.warn('[WhatsApp Cloud] Could not parse platform_settings for numbers.');
     }
 
-    if (targetGroupNames.length === 0 && targetNumbers.length === 0) {
-        const fallbackGroup = configService.get('WHATSAPP_GROUP_NAME');
-        if (fallbackGroup) {
-            targetGroupNames = [fallbackGroup];
-        } else {
-            throw new Error('No WhatsApp groups or numbers selected, and no fallback group found in settings.');
+    // Fallback to env
+    if (targetNumbers.length === 0) {
+        const envNumber = configService.get('WHATSAPP_TO_PHONE');
+        if (envNumber) targetNumbers = [envNumber.replace(/[^0-9]/g, '')];
+    }
+
+    if (targetNumbers.length === 0) {
+        throw new Error('No WhatsApp phone numbers specified. Add numbers in post settings or set WHATSAPP_TO_PHONE in env.');
+    }
+
+    // Step 1: Upload the image to Meta's media endpoint to get a media ID
+    console.log(`[WhatsApp Cloud API] Uploading image for media ID...`);
+    const uploadForm = new FormData();
+    uploadForm.append('file', imageBuffer, { filename: originalFilename || 'image.jpg', contentType });
+    uploadForm.append('messaging_product', 'whatsapp');
+    uploadForm.append('type', contentType);
+
+    const uploadRes = await axios.post(
+        `https://graph.facebook.com/v19.0/${phoneNumberId}/media`,
+        uploadForm,
+        { headers: { ...uploadForm.getHeaders(), Authorization: `Bearer ${accessToken}` } }
+    );
+    const mediaId = uploadRes.data.id;
+    console.log(`[WhatsApp Cloud API] Got media ID: ${mediaId}`);
+
+    // Step 2: Send image + caption to each phone number
+    const fullCaption = caption;
+    let successCount = 0;
+    const errors = [];
+
+    for (const number of targetNumbers) {
+        try {
+            await axios.post(
+                `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`,
+                {
+                    messaging_product: 'whatsapp',
+                    to: number,
+                    type: 'image',
+                    image: { id: mediaId, caption: fullCaption }
+                },
+                { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' } }
+            );
+            console.log(`[WhatsApp Cloud API] Sent to ${number} ✅`);
+            successCount++;
+        } catch (err) {
+            const errMsg = err.response?.data?.error?.message || err.message;
+            console.error(`[WhatsApp Cloud API] Failed to send to ${number}:`, errMsg);
+            errors.push(`${number}: ${errMsg}`);
         }
     }
 
-    if (!isWhatsAppReady || !whatsappClient) {
-        throw new Error('WhatsApp client is not ready. Please connect via Settings first.');
+    if (successCount === 0) {
+        throw new Error(`WhatsApp Cloud API failed for all numbers. Errors: ${errors.join(' | ')}`);
     }
 
-    try {
-        const { MessageMedia } = require('whatsapp-web.js');
-        const chats = await whatsappClient.getChats();
-        const base64Image = imageBuffer.toString('base64');
-        const media = new MessageMedia(contentType, base64Image, originalFilename || 'image.jpg');
-
-        let successCount = 0;
-        let lastId = null;
-        let errors = [];
-
-        for (const groupName of targetGroupNames) {
-            console.log(`[WhatsApp] Searching for chat/group named: "${groupName}"`);
-            const targetChat = chats.find(chat => chat.name && chat.name.toLowerCase() === groupName.toLowerCase());
-
-            if (!targetChat) {
-                console.warn(`[WhatsApp] Could not find a WhatsApp chat or group named "${groupName}". Skipping.`);
-                errors.push(`Group not found: ${groupName}`);
-                continue;
-            }
-
-            console.log(`[WhatsApp] Sending to ${targetChat.name} (${targetChat.id._serialized})...`);
-            try {
-                const response = await targetChat.sendMessage(media, { caption: caption });
-                lastId = response.id._serialized;
-                successCount++;
-            } catch (err) {
-                console.error(`[WhatsApp] Failed sending to ${groupName}:`, err);
-                errors.push(`Failed sending to ${groupName}: ${err.message}`);
-            }
-        }
-
-        for (const number of targetNumbers) {
-            const chatId = `${number}@c.us`;
-            console.log(`[WhatsApp] Sending to direct number: ${chatId}`);
-            try {
-                // whatsappClient.sendMessage accepts the serialized ID directly
-                const response = await whatsappClient.sendMessage(chatId, media, { caption: caption });
-                lastId = response.id._serialized;
-                successCount++;
-            } catch (err) {
-                console.error(`[WhatsApp] Failed sending to number ${number}:`, err);
-                errors.push(`Failed sending to ${number}: ${err.message}`);
-            }
-        }
-
-        if (successCount === 0) {
-            throw new Error(`Failed to send to any WhatsApp targets. Errors: ${errors.join(' | ')}`);
-        }
-
-        return { success: true, platform: 'WhatsApp', id: lastId, partialErrors: errors.length > 0 ? errors : undefined };
-    } catch (error) {
-        console.error('[WhatsApp] Error Details:', error);
-        throw new Error(`WhatsApp failed: ${error.message}`);
-    }
+    return { success: true, platform: 'WhatsApp', id: mediaId, partialErrors: errors.length > 0 ? errors : undefined };
 };
 
 const publish = async (platform, post) => {

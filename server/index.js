@@ -373,6 +373,24 @@ app.post('/api/whatsapp/disconnect', async (req, res) => {
     }
 });
 
+// --- Admin Utilities ---
+
+// POST /api/admin/reset-stuck - Reset stuck 'Processing' posts to 'Pending'
+app.post('/api/admin/reset-stuck', async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('posts')
+            .update({ status: 'Pending' })
+            .eq('status', 'Processing')
+            .select();
+
+        if (error) throw error;
+        res.json({ success: true, message: `Reset ${data.length} stuck post(s) to Pending.`, posts: data });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // --- Settings Endpoints ---
 
 // GET /api/settings
