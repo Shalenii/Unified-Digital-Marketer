@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 const PLATFORMS = [
     {
@@ -29,15 +29,92 @@ const PLATFORMS = [
 ];
 
 const PlatformManager = ({ selectedPlatforms, setSelectedPlatforms, platformSettings, setPlatformSettings }) => {
-    // Only show settings modal for one platform at a time
-    const [openSettings, setOpenSettings] = useState(null);
+    const [activeModal, setActiveModal] = useState(null); // 'WhatsApp', 'Telegram', 'Instagram', etc.
+    const [whatsappGroups, setWhatsappGroups] = useState([]);
+    const [loadingGroups, setLoadingGroups] = useState(false);
+    const [groupError, setGroupError] = useState(null);
+
+    const [telegramChats, setTelegramChats] = useState([]);
+    const [loadingTelegramChats, setLoadingTelegramChats] = useState(false);
+    const [telegramError, setTelegramError] = useState(null);
+
+    // Fetch WhatsApp groups if WhatsApp is selected
+    useEffect(() => {
+        if (selectedPlatforms.includes('WhatsApp') && whatsappGroups.length === 0) {
+            setLoadingGroups(true);
+            setGroupError(null);
+            fetch('/api/whatsapp/groups')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.error) throw new Error(data.error);
+                    setWhatsappGroups(data.groups || []);
+                })
+                .catch(err => {
+                    console.error("Failed to load WhatsApp groups:", err);
+                    setGroupError(err.message);
+                })
+                .finally(() => setLoadingGroups(false));
+        }
+    }, [selectedPlatforms]);
+
+    // Fetch Telegram chats if Telegram is selected
+    useEffect(() => {
+        if (selectedPlatforms.includes('Telegram') && telegramChats.length === 0) {
+            setLoadingTelegramChats(true);
+            setTelegramError(null);
+            fetch('/api/telegram/chats')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.error) throw new Error(data.error);
+                    setTelegramChats(data.chats || []);
+                })
+                .catch(err => {
+                    console.error("Failed to load Telegram chats:", err);
+                    setTelegramError(err.message);
+                })
+                .finally(() => setLoadingTelegramChats(false));
+        }
+    }, [selectedPlatforms]);
 
     const togglePlatform = (id) => {
         if (selectedPlatforms.includes(id)) {
             setSelectedPlatforms(selectedPlatforms.filter(p => p !== id));
+            const newSettings = { ...platformSettings };
+            delete newSettings[id];
+            setPlatformSettings(newSettings);
         } else {
             setSelectedPlatforms([...selectedPlatforms, id]);
+            // Automatically open modal for the newly selected platform
+            setActiveModal(id);
         }
+    };
+
+    const toggleWhatsAppGroup = (groupName) => {
+        const currentWaSettings = platformSettings['WhatsApp'] || { groups: [] };
+        const currentGroups = currentWaSettings.groups || [];
+
+        let newGroups;
+        if (currentGroups.includes(groupName)) {
+            newGroups = currentGroups.filter(g => g !== groupName);
+        } else {
+            newGroups = [...currentGroups, groupName];
+        }
+
+        handleSettingChange('WhatsApp', 'groups', newGroups);
+    };
+
+    const toggleTelegramChat = (chatId) => {
+        const currentTgSettings = platformSettings['Telegram'] || { chatIds: [] };
+        const currentIds = currentTgSettings.chatIds || [];
+
+        let newIds;
+        if (currentIds.includes(chatId)) {
+            newIds = currentIds.filter(id => id !== chatId);
+        } else {
+            newIds = [...currentIds, chatId];
+        }
+
+        handleSettingChange('Telegram', 'chatIds', newIds);
     };
 
     const handleSettingChange = (platformId, field, value) => {
@@ -56,44 +133,310 @@ const PlatformManager = ({ selectedPlatforms, setSelectedPlatforms, platformSett
             <div className="platform-list">
                 {PLATFORMS.map(p => (
                     <div key={p.id} className={`platform-item ${p.id.toLowerCase()} ${selectedPlatforms.includes(p.id) ? 'active' : ''}`}>
-                        <div className="platform-header">
-                            <label className="switch-label">
+                        <div className="platform-header" style={{ display: 'flex', alignItems: 'center', width: '100%', marginBottom: selectedPlatforms.includes(p.id) ? '12px' : '0' }}>
+                            <label className="switch-label" style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', overflow: 'hidden' }}>
                                 <input
                                     type="checkbox"
                                     checked={selectedPlatforms.includes(p.id)}
                                     onChange={() => togglePlatform(p.id)}
+                                    style={{ width: '18px', height: '18px', flexShrink: 0 }}
                                 />
-                                <span className="icon">{p.icon}</span>
-                                <span className="name">{p.name}</span>
+                                <span className="icon" style={{ display: 'flex', flexShrink: 0 }}>{p.icon}</span>
+                                <span className="name" style={{
+                                    fontSize: '0.95rem',
+                                    fontWeight: 500,
+                                    color: 'white',
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis'
+                                }}>{p.name}</span>
                             </label>
-
-                            {selectedPlatforms.includes(p.id) && (
-                                <button
-                                    type="button"
-                                    className="gear-btn"
-                                    onClick={() => setOpenSettings(p.id === openSettings ? null : p.id)}
-                                    title="Platform Settings"
-                                >
-                                    ⚙️
-                                </button>
-                            )}
                         </div>
 
-                        {openSettings === p.id && selectedPlatforms.includes(p.id) && (
-                            <div className="platform-settings-dropdown">
-                                <h4>Settings for {p.name}</h4>
-                                <label>Override Caption:</label>
-                                <textarea
-                                    placeholder={`Specific caption for ${p.name}...`}
-                                    value={platformSettings[p.id]?.caption || ''}
-                                    onChange={(e) => handleSettingChange(p.id, 'caption', e.target.value)}
-                                />
-                                {/* Could add specific time overrides here too if needed */}
+                        {selectedPlatforms.includes(p.id) && (
+                            <div className="platform-actions" style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
+                                <button
+                                    type="button"
+                                    className="config-btn"
+                                    onClick={() => setActiveModal(p.id)}
+                                    title={`Configure ${p.name} Settings`}
+                                    style={{
+                                        background: 'rgba(59, 130, 246, 0.15)',
+                                        border: '1px solid rgba(59, 130, 246, 0.4)',
+                                        borderRadius: '8px',
+                                        width: '36px',
+                                        height: '36px',
+                                        cursor: 'pointer',
+                                        color: 'var(--primary)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                        boxShadow: '0 0 10px rgba(59, 130, 246, 0.2)',
+                                        flexShrink: 0
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        e.currentTarget.style.background = 'rgba(59, 130, 246, 0.25)';
+                                        e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.6)';
+                                        e.currentTarget.style.transform = 'translateY(-2px)';
+                                        e.currentTarget.style.boxShadow = '0 0 15px rgba(59, 130, 246, 0.4)';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.currentTarget.style.background = 'rgba(59, 130, 246, 0.15)';
+                                        e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.4)';
+                                        e.currentTarget.style.transform = 'translateY(0)';
+                                        e.currentTarget.style.boxShadow = '0 0 10px rgba(59, 130, 246, 0.2)';
+                                    }}
+                                >
+                                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M12 20h9"></path>
+                                        <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                                    </svg>
+                                </button>
                             </div>
                         )}
                     </div>
                 ))}
             </div>
+
+            {/* Platform Settings Modal */}
+            {activeModal && (
+                <div className="modal-overlay" onClick={() => setActiveModal(null)} style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    background: 'rgba(15, 23, 42, 0.8)', display: 'flex', alignItems: 'center',
+                    justifyContent: 'center', zIndex: 2000, backdropFilter: 'blur(16px)'
+                }}>
+                    <div className="modal-content expanded-selector" onClick={e => e.stopPropagation()} style={{
+                        background: '#1e293b', padding: '2.5rem', borderRadius: '32px',
+                        width: '95%', maxWidth: '650px', border: '1px solid rgba(255,255,255,0.08)',
+                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.8)',
+                        maxHeight: '85vh', overflowY: 'auto',
+                        position: 'relative'
+                    }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2.5rem' }}>
+                            <h2 style={{ margin: 0, color: 'white', display: 'flex', alignItems: 'center', gap: '16px', fontSize: '1.8rem', fontWeight: 700 }}>
+                                <span style={{
+                                    background: 'linear-gradient(135deg, rgba(96, 165, 250, 0.2), rgba(167, 139, 250, 0.2))',
+                                    padding: '12px',
+                                    borderRadius: '16px',
+                                    display: 'flex',
+                                    border: '1px solid rgba(255,255,255,0.1)'
+                                }}>
+                                    {PLATFORMS.find(p => p.id === activeModal)?.icon}
+                                </span>
+                                {activeModal} <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>Settings</span>
+                            </h2>
+                            <button onClick={() => setActiveModal(null)} style={{
+                                background: 'rgba(255,255,255,0.05)', border: 'none', color: 'var(--text-muted)',
+                                width: '44px', height: '44px', borderRadius: '50%', cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem',
+                                transition: 'all 0.2s'
+                            }}>&times;</button>
+                        </div>
+
+                        <div className="panel-row" style={{ marginBottom: '2rem' }}>
+                            <label className="panel-label" style={{ display: 'block', marginBottom: '0.8rem', fontWeight: 600, fontSize: '1.1rem' }}>
+                                Post Caption Override:
+                            </label>
+                            <textarea
+                                className="caption-override-textarea"
+                                placeholder={`Specific caption just for ${activeModal}...`}
+                                value={platformSettings[activeModal]?.caption || ''}
+                                onChange={(e) => handleSettingChange(activeModal, 'caption', e.target.value)}
+                                style={{
+                                    width: '100%', minHeight: '120px', padding: '1.2rem',
+                                    borderRadius: '16px', background: 'rgba(255,255,255,0.03)',
+                                    color: 'white', border: '1px solid rgba(255,255,255,0.07)', fontSize: '1rem',
+                                    outline: 'none', transition: 'border-color 0.2s'
+                                }}
+                            />
+                        </div>
+
+                        {activeModal === 'WhatsApp' && (
+                            <div className="whatsapp-modal-section">
+                                <h4 className="selector-title" style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>Select WhatsApp Groups:</h4>
+
+                                {loadingGroups && <div className="loading-text">Loading groups...</div>}
+                                {groupError && <div className="error-text" style={{ color: 'var(--error)', marginBottom: '1rem' }}>Connection Error: {groupError}</div>}
+
+                                {!loadingGroups && !groupError && whatsappGroups.length === 0 && (
+                                    <div className="empty-text">No groups found. Please make sure the bot is joined to groups.</div>
+                                )}
+
+                                {!loadingGroups && whatsappGroups.length > 0 && (
+                                    <div className="group-list-box" style={{
+                                        maxHeight: '250px', overflowY: 'auto', background: 'rgba(255,255,255,0.02)',
+                                        borderRadius: '16px', border: '1px solid rgba(255,255,255,0.07)', padding: '0.5rem'
+                                    }}>
+                                        {whatsappGroups.map(grp => (
+                                            <label key={grp.id} className="group-item-label" style={{
+                                                display: 'flex', alignItems: 'center', gap: '14px', padding: '14px',
+                                                cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.03)'
+                                            }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={(platformSettings['WhatsApp']?.groups || []).includes(grp.name)}
+                                                    onChange={() => toggleWhatsAppGroup(grp.name)}
+                                                    style={{ width: '22px', height: '22px', accentColor: 'var(--primary)' }}
+                                                />
+                                                <span className="group-display-name" style={{ fontSize: '1.1rem' }}>{grp.name}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                )}
+
+                                <div className="direct-numbers-box" style={{ marginTop: '2.5rem' }}>
+                                    <h4 className="selector-title" style={{ fontSize: '1.1rem', marginBottom: '0.8rem' }}>Send to Direct Numbers:</h4>
+                                    <input
+                                        type="text"
+                                        className="direct-numbers-input"
+                                        placeholder="e.g. 919876543210, 14155552671"
+                                        value={platformSettings['WhatsApp']?.numbers || ''}
+                                        onChange={(e) => handleSettingChange('WhatsApp', 'numbers', e.target.value)}
+                                        style={{
+                                            width: '100%', padding: '1.2rem', borderRadius: '16px',
+                                            background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+                                            color: 'white', marginBottom: '0.8rem', fontSize: '1rem'
+                                        }}
+                                    />
+                                    <div className="helper-text" style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: '1.4' }}>
+                                        Include country code without '+' (e.g. 91 for India, 1 for US). Separate by commas.
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeModal === 'Telegram' && (
+                            <div className="telegram-modal-section">
+                                <div className="selector-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                                    <h4 className="selector-title" style={{ margin: 0, fontSize: '1.1rem' }}>Select Telegram Groups:</h4>
+                                    <button
+                                        type="button"
+                                        className="sync-btn"
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            setLoadingTelegramChats(true);
+                                            fetch('/api/telegram/sync', { method: 'POST' }).then(() => {
+                                                fetch('/api/telegram/chats')
+                                                    .then(res => res.json())
+                                                    .then(data => setTelegramChats(data.chats || []))
+                                                    .finally(() => setLoadingTelegramChats(false));
+                                            });
+                                        }}
+                                        style={{
+                                            fontSize: '0.9rem', padding: '10px 20px', borderRadius: '12px',
+                                            background: 'var(--primary)', color: 'white', border: 'none', cursor: 'pointer',
+                                            fontWeight: 600, transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        Sync Now
+                                    </button>
+                                </div>
+
+                                {loadingTelegramChats && <div className="loading-text">Loading chats...</div>}
+                                {telegramError && <div className="error-text" style={{ color: 'var(--error)' }}>Error: {telegramError}</div>}
+
+                                {!loadingTelegramChats && !telegramError && telegramChats.length === 0 && (
+                                    <div className="empty-text">No Telegram groups found. Please add the bot to a group first.</div>
+                                )}
+
+                                {!loadingTelegramChats && telegramChats.length > 0 && (
+                                    <div className="group-list-box" style={{
+                                        maxHeight: '250px', overflowY: 'auto', background: 'rgba(255,255,255,0.02)',
+                                        borderRadius: '16px', border: '1px solid rgba(255,255,255,0.07)', padding: '0.5rem'
+                                    }}>
+                                        {telegramChats.map(chat => (
+                                            <div key={chat.chat_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                                                <label className="group-item-label" style={{
+                                                    flex: 1, display: 'flex', alignItems: 'center', gap: '14px',
+                                                    padding: '14px', cursor: 'pointer'
+                                                }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={(platformSettings['Telegram']?.chatIds || []).includes(chat.chat_id)}
+                                                        onChange={() => toggleTelegramChat(chat.chat_id)}
+                                                        style={{ width: '22px', height: '22px', accentColor: 'var(--primary)' }}
+                                                    />
+                                                    <span className="group-display-name" style={{ fontSize: '1.1rem' }}>
+                                                        {chat.title} <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>({chat.type})</span>
+                                                    </span>
+                                                </label>
+                                                <button
+                                                    type="button"
+                                                    title="Remove from list"
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        if (window.confirm(`Remove ${chat.title} from Telegram sync list?`)) {
+                                                            setLoadingTelegramChats(true);
+                                                            fetch(`/api/telegram/chats/${chat.chat_id}`, { method: 'DELETE' })
+                                                                .then(() => fetch('/api/telegram/chats'))
+                                                                .then(res => res.json())
+                                                                .then(data => setTelegramChats(data.chats || []))
+                                                                .finally(() => setLoadingTelegramChats(false));
+                                                        }
+                                                    }}
+                                                    style={{ background: 'none', border: 'none', color: 'var(--error)', cursor: 'pointer', fontSize: '1.8rem', padding: '0 20px' }}
+                                                >&times;</button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                <div className="direct-numbers-box" style={{ marginTop: '2.5rem' }}>
+                                    <h4 className="selector-title" style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>Manually Add Group ID:</h4>
+                                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                                        <input
+                                            type="text"
+                                            className="direct-numbers-input"
+                                            placeholder="-100xxxxxxxxx (Chat ID)"
+                                            id="manual-telegram-id"
+                                            style={{
+                                                flex: '1 1 200px', padding: '1.2rem', borderRadius: '16px',
+                                                background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', color: 'white',
+                                                fontSize: '1rem'
+                                            }}
+                                        />
+                                        <button
+                                            type="button"
+                                            className="primary-btn"
+                                            style={{ padding: '1rem 2rem', width: 'auto', fontSize: '1rem', borderRadius: '16px' }}
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                const idInput = document.getElementById('manual-telegram-id');
+                                                const chatId = idInput.value.trim();
+                                                if (!chatId) return;
+                                                setLoadingTelegramChats(true);
+                                                fetch('/api/telegram/add-chat', {
+                                                    method: 'POST',
+                                                    headers: { 'Content-Type': 'application/json' },
+                                                    body: JSON.stringify({ chatId, type: 'group' })
+                                                }).then(() => {
+                                                    idInput.value = '';
+                                                    return fetch('/api/telegram/chats');
+                                                })
+                                                    .then(res => res.json())
+                                                    .then(data => setTelegramChats(data.chats || []))
+                                                    .finally(() => setLoadingTelegramChats(false));
+                                            }}
+                                        >
+                                            Add
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        <div style={{ marginTop: '3rem', display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+                            <button onClick={() => setActiveModal(null)} style={{
+                                padding: '1rem 2.5rem', borderRadius: '12px', background: 'var(--primary)',
+                                color: 'white', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '1.1rem'
+                            }}>
+                                Save & Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

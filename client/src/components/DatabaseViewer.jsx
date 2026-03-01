@@ -5,7 +5,7 @@ function DatabaseViewer() {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        fetch('http://localhost:3001/api/posts')
+        fetch(`/api/posts?t=${Date.now()}`)
             .then(res => res.json())
             .then(data => {
                 setPosts(data.posts);

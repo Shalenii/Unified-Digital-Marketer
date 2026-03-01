@@ -46,7 +46,10 @@ const runCronJob = async () => {
                 await socialManager.publish(platform, post);
                 console.log(`Successfully published to ${platform}`);
             } catch (pubError) {
-                console.error(`Failed to publish to ${platform}:`, pubError.message);
+                console.error(`\n===========================================`);
+                console.error(`[CRON ERROR] Failed to publish to ${platform}:`);
+                console.error(pubError.stack || pubError);
+                console.error(`===========================================\n`);
                 // We don't fail the whole post yet, maybe one platform failed but others succeeded.
                 // Ideally we'd track status per platform, but for now we continue.
             }

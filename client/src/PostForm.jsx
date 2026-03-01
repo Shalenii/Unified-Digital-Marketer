@@ -78,9 +78,7 @@ function PostForm({ onPostCreated }) {
         formData.append('is_immediate', scheduleType === 'Now');
 
         try {
-            // Use relative URL for Vercel, but localhost for dev if not proxied
-            const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:3001' : '';
-            const res = await fetch(`${baseUrl}/api/posts`, {
+            const res = await fetch(`/api/posts`, {
                 method: 'POST',
                 body: formData
             });

@@ -22,6 +22,9 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+// Serve local uploads publicly (Required for Instagram fetch via tunnel)
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 // DEBUG: Log all requests
 app.use((req, res, next) => {
     console.log(`[Request] ${req.method} ${req.url}`);
@@ -98,9 +101,13 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
 
         // Handle File Upload
         if (req.file) {
-            const fileName = `${Date.now()}_${req.file.originalname}`;
-            // Upload to Supabase Storage
-            const publicUrl = await uploadToSupabase(req.file.buffer, fileName, req.file.mimetype);
+            // Sanitize filename: remove spaces and special characters
+            const sanitizedName = req.file.originalname.replace(/[^a-zA-Z0-9.]/g, '_');
+            const fileName = `${Date.now()}_${sanitizedName}`;
+            const filePath = path.join(__dirname, 'uploads', fileName);
+            const fs = require('fs');
+            fs.writeFileSync(filePath, req.file.buffer);
+            console.log(`[Storage] Saved file locally: ${filePath}`);
             image_path = fileName;
         } else if (source_mode === 'Auto' && image_path) {
             // AUTO MODE FIX:
@@ -117,9 +124,11 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
                 const mimeType = ext === '.png' ? 'image/png' : 'image/jpeg';
 
                 const fileName = `${Date.now()}_auto_${path.basename(localFilePath)}`;
-                await uploadToSupabase(fileBuffer, fileName, mimeType);
+                const newPath = path.join(__dirname, 'uploads', fileName);
+                fs.writeFileSync(newPath, fileBuffer);
+                console.log(`[Auto Mode] Saved local file: ${newPath}`);
 
-                // Update image_path to the new Supabase filename
+                // Update image_path to the new filename for the public tunnel
                 image_path = fileName;
             } else {
                 console.warn(`[Auto Mode] Local file not found: ${localFilePath}`);
@@ -175,6 +184,7 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
                 try {
                     const platformList = JSON.parse(platforms || '[]');
                     for (const p of platformList) {
+                        console.log(`[Background] Attempting to publish to ${p} for post ${post.id}`);
                         await socialManager.publish(p, post);
                     }
 
@@ -185,7 +195,7 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
                         .eq('id', post.id);
 
                 } catch (pubErr) {
-                    console.error('[Background] Immediate publish failed:', pubErr);
+                    console.error('[Background] Immediate publish failed:', pubErr.message || pubErr);
                     const fs = require('fs');
                     fs.appendFileSync('server-error.log', `[${new Date().toISOString()}] Immediate publish failed: ${pubErr.stack || pubErr}\n`);
                     await supabase
@@ -199,7 +209,7 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
         }
 
     } catch (err) {
-        console.error('Error creating post:', err);
+        console.error('Error creating post:', err.message || err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -252,6 +262,106 @@ app.patch('/api/posts/:id', async (req, res) => {
 });
 
 
+// --- Telegram Endpoints ---
+const telegramService = require('./services/telegramService');
+
+// GET /api/telegram/chats - Get all saved Telegram groups/channels
+app.get('/api/telegram/chats', async (req, res) => {
+    try {
+        const chats = await telegramService.getSavedChats();
+        res.json({ chats });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST /api/telegram/sync - Manually trigger an update fetch
+app.post('/api/telegram/sync', async (req, res) => {
+    try {
+        await telegramService.fetchUpdates();
+        res.json({ success: true, message: 'Sync complete' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST /api/telegram/add-chat - Manually add a group ID
+app.post('/api/telegram/add-chat', async (req, res) => {
+    const { chatId, title, type } = req.body;
+    if (!chatId) return res.status(400).json({ error: 'Chat ID is required' });
+
+    try {
+        const { error } = await supabase
+            .from('telegram_chats')
+            .upsert({
+                chat_id: chatId,
+                type: type || 'group',
+                title: title || 'Manual Entry',
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'chat_id' });
+
+        if (error) throw error;
+        res.json({ success: true, message: 'Chat added' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// DELETE /api/telegram/chats/:id - Remove a manually added chat
+app.delete('/api/telegram/chats/:id', async (req, res) => {
+    try {
+        const { error } = await supabase
+            .from('telegram_chats')
+            .delete()
+            .eq('chat_id', req.params.id);
+
+        if (error) throw error;
+        res.json({ success: true, message: 'Chat deleted' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// --- WhatsApp Endpoints ---
+const socialManager = require('./services/socialManager');
+
+// GET /api/whatsapp/qr - Get current QR or status
+app.get('/api/whatsapp/qr', (req, res) => {
+    res.json(socialManager.getWhatsAppStatus());
+});
+
+// GET /api/whatsapp/groups - Get all groups
+app.get('/api/whatsapp/groups', async (req, res) => {
+    try {
+        const groups = await socialManager.getWhatsAppGroups();
+        res.json({ groups });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST /api/whatsapp/pair - Request pairing code
+app.post('/api/whatsapp/pair', async (req, res) => {
+    const { phoneNumber } = req.body;
+    if (!phoneNumber) return res.status(400).json({ error: 'Phone number is required' });
+
+    try {
+        const code = await socialManager.requestWhatsAppPairingCode(phoneNumber);
+        res.json({ success: true, code });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST /api/whatsapp/disconnect - Logout and reset session
+app.post('/api/whatsapp/disconnect', async (req, res) => {
+    try {
+        await socialManager.disconnectWhatsApp();
+        res.json({ success: true, message: 'Disconnected' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 
 // --- Settings Endpoints ---
 

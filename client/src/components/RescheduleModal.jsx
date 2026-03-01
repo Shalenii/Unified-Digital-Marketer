@@ -21,7 +21,7 @@ const RescheduleModal = ({ post, onClose, onSuccess }) => {
                 updates.status = 'Pending';
             }
 
-            const res = await fetch(`http://localhost:3001/api/posts/${post.id}`, {
+            const res = await fetch(`/api/posts/${post.id}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(updates)

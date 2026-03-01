@@ -1,30 +1,50 @@
-const supabase = require('../supabaseClient');
+const { Client } = require('pg');
 
 class ConfigService {
     constructor() {
         this.cache = {};
         this.isLoaded = false;
+
+        let connectionString = process.env.DATABASE_URL;
+        if (!connectionString) {
+            console.warn('[ConfigService] WARNING: No DATABASE_URL found in environment.');
+        }
+
+        this.pgClient = new Client({
+            connectionString,
+            ssl: { rejectUnauthorized: false }
+        });
+
+        // Suppress connection errors crashing the process if DB is temporarily unreachable
+        this.pgClient.on('error', (err) => {
+            console.error('[ConfigService] Background PG connection error:', err.message);
+        });
+
+        this._connectPromise = this.pgClient.connect().catch(err => {
+            console.error('[ConfigService] Initial PG connection failed:', err.message);
+        });
     }
 
     async loadSettings() {
         console.log('[ConfigService] Loading settings from database...');
-        const { data, error } = await supabase
-            .from('settings')
-            .select('*');
+        try {
+            await this._connectPromise;
 
-        if (error) {
-            console.error('[ConfigService] Failed to load settings:', error);
-            return;
+            const res = await this.pgClient.query('SELECT * FROM settings');
+
+            if (res && res.rows) {
+                res.rows.forEach(row => {
+                    this.cache[row.key] = row.value;
+                });
+            }
+
+            this.isLoaded = true;
+            console.log(`[ConfigService] Loaded ${Object.keys(this.cache).length} settings.`);
+        } catch (err) {
+            console.error('[ConfigService] Exception loading settings:', err.message);
+            // Mark loaded anyway so we don't infinitely retry a dead DB on every page load
+            this.isLoaded = true;
         }
-
-        if (data) {
-            data.forEach(row => {
-                this.cache[row.key] = row.value;
-            });
-        }
-
-        this.isLoaded = true;
-        console.log(`[ConfigService] Loaded ${Object.keys(this.cache).length} settings.`);
     }
 
     /**
@@ -50,28 +70,24 @@ class ConfigService {
         // Update Cache immediately for responsiveness
         this.cache[key] = value;
 
-        const upsetData = {
-            key,
-            value,
-            updated_at: new Date()
-        };
+        try {
+            await this._connectPromise;
 
-        if (description) {
-            upsetData.description = description;
-        }
+            const upsetQuery = `
+                INSERT INTO settings (key, value, description, updated_at)
+                VALUES ($1, $2, $3, NOW())
+                ON CONFLICT (key) DO UPDATE 
+                SET value = EXCLUDED.value, description = EXCLUDED.description, updated_at = NOW()
+                RETURNING *;
+            `;
+            const values = [key, value, description || null];
 
-        const { data, error } = await supabase
-            .from('settings')
-            .upsert(upsetData)
-            .select()
-            .single();
-
-        if (error) {
+            const res = await this.pgClient.query(upsetQuery, values);
+            return res.rows[0];
+        } catch (error) {
             console.error(`[ConfigService] Failed to save setting ${key}:`, error);
             throw error;
         }
-
-        return data;
     }
 
     async getAll() {

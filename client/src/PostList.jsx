@@ -3,19 +3,15 @@ import CalendarView from './components/CalendarView';
 import PostOptionsDropdown from './components/PostOptionsDropdown';
 import RescheduleModal from './components/RescheduleModal';
 
-// START: Supabase Configuration
-// Ideally this comes from import.meta.env.VITE_SUPABASE_URL but we can hardcode for the "no functionality change" constraint quick fix
-// or just use the API to get the signed URL if needed. But for public bucket, it's easy.
-const SUPABASE_PROJECT_URL = 'https://powpkqqtxxczxghyhgii.supabase.co';
-const STORAGE_BUCKET = 'posts';
+// START: App Configuration
 const API_BASE_URL = 'http://localhost:3001'; // Default local, Vercel will be relative
 
 const getImageUrl = (path) => {
     if (!path) return '';
     if (path.startsWith('http')) return path; // Already a URL
-    return `${SUPABASE_PROJECT_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${path}`;
+    return `${API_BASE_URL}/uploads/${path}`;
 };
-// END: Supabase Configuration
+// END: App Configuration
 
 function PostList({ refreshTrigger }) {
     const [posts, setPosts] = useState([]);
@@ -24,12 +20,7 @@ function PostList({ refreshTrigger }) {
 
     const fetchPosts = async () => {
         try {
-            // Use relative URL for Vercel, but localhost for dev if not proxied
-            // Vite proxy isn't set up, so we stick to localhost for local dev for now
-            // For Vercel, we'll need to change this.
-            // Let's use a smart base.
-            const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:3001' : '';
-            const response = await fetch(`${baseUrl}/api/posts`);
+            const response = await fetch(`/api/posts?t=${Date.now()}`);
             const data = await response.json();
             setPosts(data.posts);
         } catch (error) {
@@ -49,18 +40,16 @@ function PostList({ refreshTrigger }) {
     };
 
     const handleAction = async (id, action) => {
-        const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:3001' : '';
-
         if (action === 'delete') {
             if (!window.confirm('Are you sure you want to delete this post?')) return;
             try {
-                const res = await fetch(`${baseUrl}/api/posts/${id}`, { method: 'DELETE' });
+                const res = await fetch(`/api/posts/${id}`, { method: 'DELETE' });
                 if (res.ok) fetchPosts();
             } catch (err) { alert('Failed to delete'); }
         } else if (action === 'pause' || action === 'resume') {
             const newStatus = action === 'pause' ? 'Paused' : 'Pending';
             try {
-                const res = await fetch(`${baseUrl}/api/posts/${id}`, {
+                const res = await fetch(`/api/posts/${id}`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ status: newStatus })
@@ -70,7 +59,7 @@ function PostList({ refreshTrigger }) {
         } else if (action === 'stop_recurrence') {
             if (!window.confirm('This will stop future recurring posts for this schedule. The current post will still publish once. Continue?')) return;
             try {
-                const res = await fetch(`${baseUrl}/api/posts/${id}`, {
+                const res = await fetch(`/api/posts/${id}`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ is_recurring: 0 })

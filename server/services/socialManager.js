@@ -3,8 +3,73 @@ const supabase = require('../supabaseClient');
 const axios = require('axios');
 const FormData = require('form-data');
 const { TwitterApi } = require('twitter-api-v2');
+const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const qrcode = require('qrcode-terminal');
 
-// ... (existing code)
+// --- WhatsApp Client Initialization ---
+let whatsappClient = null;
+let isWhatsAppReady = false;
+let currentQrCode = null;
+let authStatus = 'INITIALIZING'; // 'INITIALIZING', 'QR_READY', 'AUTHENTICATED', 'FAILED'
+
+const initializeWhatsApp = () => {
+    console.log('[WhatsApp] Initializing client...');
+    whatsappClient = new Client({
+        authStrategy: new LocalAuth({ dataPath: './whatsapp-session' }),
+        webVersionCache: {
+            type: 'remote',
+            remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
+        },
+        puppeteer: {
+            args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        }
+    });
+
+    whatsappClient.on('qr', (qr) => {
+        console.log('\n======================================================');
+        console.log('📱 WHATSAPP LOGIN REQUIRED 📱');
+        console.log('Scan the QR code below using your phone\'s WhatsApp:');
+        console.log('Open WhatsApp -> Linked Devices -> Link a Device');
+        console.log('======================================================\n');
+
+        currentQrCode = qr;
+        authStatus = 'QR_READY';
+        qrcode.generate(qr, { small: true });
+    });
+
+    whatsappClient.on('ready', () => {
+        console.log('[WhatsApp] Client is ready and connected!');
+        isWhatsAppReady = true;
+        authStatus = 'AUTHENTICATED';
+        currentQrCode = null;
+    });
+
+    whatsappClient.on('authenticated', () => {
+        console.log('[WhatsApp] Authenticated successfully!');
+        authStatus = 'AUTHENTICATED';
+        currentQrCode = null;
+    });
+
+    whatsappClient.on('auth_failure', msg => {
+        console.error('[WhatsApp] Authentication failure:', msg);
+        isWhatsAppReady = false;
+        authStatus = 'FAILED';
+    });
+
+    whatsappClient.on('disconnected', (reason) => {
+        console.log('[WhatsApp] Client was disconnected', reason);
+        isWhatsAppReady = false;
+        // Optionally try to reconnect
+    });
+
+    whatsappClient.initialize().catch(err => {
+        console.error('[WhatsApp] Failed to initialize:', err);
+    });
+};
+
+// Initialize it immediately in background
+initializeWhatsApp();
+// -------------------------------------
 
 // Initialize Twitter Client (v2)
 const getTwitterClient = () => {
@@ -21,29 +86,53 @@ const getTwitterClient = () => {
 // ... (rest of the file needs updates too)
 
 
-// Helper: Download Image from Supabase to Buffer
+const fs = require('fs');
+const path = require('path');
+
+// Helper: Download Image from local storage (or Supabase fallback)
 const downloadImage = async (imagePath) => {
-    // If it's a full URL (Auto mode might send this?), use it. 
-    // If it's just a filename (Manual mode), construct Supabase URL or download via SDK.
+    // We switched to local storage in the previous conversation to avoid network blocks.
+    // The imagePath is usually just a filename like "172...jpg" inside the /uploads folder.
 
-    // We stored just the filename in DB.
-    // Let's try downloading via SDK for security/ease, or just fetch the public URL.
-    // Fetching public URL is easiest if bucket is public.
+    // Construct the public URL using the PUBLIC_URL env variable (which is required by Instagram Graph API)
+    let baseUrl = configService.get('PUBLIC_URL');
+    if (!baseUrl) {
+        console.warn('[Storage] PUBLIC_URL is missing from .env. Instagram requires a public URL to fetch the image. Using localhost as fallback.');
+        baseUrl = 'http://localhost:3001';
+    }
 
-    const { data } = supabase.storage.from('posts').getPublicUrl(imagePath);
-    const publicUrl = data.publicUrl;
+    // Ensure trailing slash logic is clean
+    if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
 
-    console.log(`[DEBUG] Downloading image from: ${publicUrl}`);
+    // URL encode the filename to handle spaces/special characters
+    const encodedFilename = encodeURIComponent(imagePath);
+    const publicUrl = `${baseUrl}/uploads/${encodedFilename}`;
+    console.log(`[DEBUG] Attempting to read local image for URL: ${publicUrl}`);
 
     try {
-        const response = await axios.get(publicUrl, { responseType: 'arraybuffer' });
+        const _filename = path.basename(imagePath); // Clean the path to just the actual file name
+        const localFilePath = path.join(__dirname, '..', 'uploads', _filename);
+
+        if (!fs.existsSync(localFilePath)) {
+            throw new Error(`File not found on local disk: ${localFilePath}`);
+        }
+
+        const buffer = fs.readFileSync(localFilePath);
+
+        // Determine content type roughly based on extension
+        const ext = path.extname(_filename).toLowerCase();
+        let contentType = 'image/jpeg';
+        if (ext === '.png') contentType = 'image/png';
+        if (ext === '.webp') contentType = 'image/webp';
+        if (ext === '.gif') contentType = 'image/gif';
+
         return {
-            buffer: Buffer.from(response.data),
-            contentType: response.headers['content-type'],
+            buffer: buffer,
+            contentType: contentType,
             url: publicUrl
         };
     } catch (error) {
-        throw new Error(`Failed to download image from Supabase: ${error.message}`);
+        throw new Error(`Failed to load image from local storage: ${error.message}`);
     }
 };
 
@@ -96,117 +185,286 @@ const publishToFacebook = async (caption, imageBuffer) => {
     }
 };
 
-const publishToInstagram = async (caption, imageUrl) => {
-    // Instagram Graph API *REQUIRES* a public URL. 
-    // Since we are using Supabase, we HAVE a public URL! Perfect.
-
-    const accountId = configService.get('INSTAGRAM_ACCOUNT_ID');
+const publishToInstagram = async (caption, publicImageUrl) => {
     const token = configService.get('FACEBOOK_PAGE_ACCESS_TOKEN');
+    const igAccountId = configService.get('INSTAGRAM_ACCOUNT_ID');
 
-    if (!accountId || !token) {
-        throw new Error('Missing Instagram Credentials');
+    if (!token || !igAccountId) {
+        throw new Error('Missing FACEBOOK_PAGE_ACCESS_TOKEN or INSTAGRAM_ACCOUNT_ID in .env or settings');
     }
 
-    console.log(`[Instagram] uploading URL: ${imageUrl}`);
+    console.log(`[Instagram Graph API] Preparing to publish to Account ID: ${igAccountId}...`);
+    console.log(`[Instagram Graph API] Image URL for Meta Servers: ${publicImageUrl}`);
 
     try {
-        // Step 1: Create Media Container
+
+        // Step 1: Create a Media Container
         const containerRes = await axios.post(
-            `https://graph.facebook.com/v18.0/${accountId}/media`,
+            `https://graph.facebook.com/v19.0/${igAccountId}/media`,
             null,
             {
                 params: {
-                    image_url: imageUrl,
+                    image_url: publicImageUrl,
                     caption: caption,
                     access_token: token
                 }
             }
         );
 
-        const containerId = containerRes.data.id;
-        console.log(`[Instagram] Container Created: ${containerId}`);
+        const creationId = containerRes.data.id;
+        console.log(`[Instagram Graph API] Media container created successfully. ID: ${creationId}`);
 
-        // Step 2: Publish Container
+        // Step 2: Publish the Container
         const publishRes = await axios.post(
-            `https://graph.facebook.com/v18.0/${accountId}/media_publish`,
+            `https://graph.facebook.com/v19.0/${igAccountId}/media_publish`,
             null,
             {
                 params: {
-                    creation_id: containerId,
+                    creation_id: creationId,
                     access_token: token
                 }
             }
         );
 
+        console.log(`[Instagram Graph API] Post published successfully. Published Media ID: ${publishRes.data.id}`);
         return { success: true, platform: 'Instagram', id: publishRes.data.id };
 
     } catch (error) {
-        console.error('Instagram API Error:', error.response?.data || error.message);
-        throw new Error(`Instagram failed: ${error.response?.data?.error?.message || error.message}`);
-    }
-};
+        let errorMsg = error.response?.data?.error?.message || error.message;
+        console.error('[Instagram Graph API Error]:', error.response?.data?.error || error);
 
-const publishToTelegram = async (caption, imageBuffer) => {
-    const botToken = configService.get('TELEGRAM_BOT_TOKEN');
-    const chatId = configService.get('TELEGRAM_CHAT_ID');
-
-    if (!botToken || !chatId) throw new Error('Telegram credentials not found in env');
-
-    try {
-        const form = new FormData();
-        form.append('chat_id', chatId);
-        form.append('caption', caption);
-        form.append('photo', imageBuffer, { filename: 'image.jpg' });
-
-        const response = await axios.post(
-            `https://api.telegram.org/bot${botToken}/sendPhoto`,
-            form,
-            { headers: form.getHeaders() }
-        );
-
-        if (response.data.ok) {
-            return { success: true, platform: 'Telegram', id: response.data.result.message_id };
-        } else {
-            throw new Error(`Telegram Error: ${response.data.description}`);
+        if (errorMsg.includes('Invalid image_url') || errorMsg.includes('Invalid URL') || errorMsg.includes('Fetch Image Error') || errorMsg.toLowerCase().includes('fetch')) {
+            errorMsg += ' (CRITICAL: Meta servers cannot reach localhost. Please ensure your PUBLIC_URL in .env is set to a real ngrok URL like https://xxxx.ngrok-free.app)';
         }
-    } catch (error) {
-        throw new Error(`Telegram failed: ${error.message}`);
+
+        throw new Error(`Instagram Official API failed: ${errorMsg}`);
     }
 };
 
-const publishToWhatsApp = async (caption, imageUrl) => {
-    const token = configService.get('WHATSAPP_ACCESS_TOKEN');
-    const phoneId = configService.get('WHATSAPP_PHONE_NUMBER_ID');
-    const toPhone = configService.get('WHATSAPP_TO_PHONE');
+const publishToTelegram = async (caption, imageBuffer, post) => {
+    console.log('[Telegram] publishToTelegram called.');
+    const botToken = configService.get('TELEGRAM_BOT_TOKEN');
+    if (!botToken) throw new Error('Telegram Bot Token not found in env');
 
-    if (!token || !phoneId || !toPhone) {
-        throw new Error('WhatsApp credentials (TOKEN, PHONE_ID, TO_PHONE) not found in env');
+    let chatIds = [];
+
+    // 1. Check for specific chat IDs selected in the frontend UI (Groups/Channels)
+    try {
+        const platformSettings = typeof post.platform_settings === 'string'
+            ? JSON.parse(post.platform_settings)
+            : (post.platform_settings || {});
+
+        if (platformSettings.Telegram && platformSettings.Telegram.chatIds && platformSettings.Telegram.chatIds.length > 0) {
+            chatIds = platformSettings.Telegram.chatIds;
+            console.log(`[Telegram] Found ${chatIds.length} chatIds in platform_settings:`, chatIds);
+        }
+    } catch (e) {
+        console.warn('[Telegram] Could not parse platform_settings for chatIds.');
+    }
+
+    // 2. Automatically grab all ALL private users who have interacted with the bot (Autobroadcast)
+    try {
+        const telegramService = require('./telegramService');
+        const privateUserIds = await telegramService.getAllPrivateChatIds();
+        console.log(`[Telegram Broadcast] Adding ${privateUserIds.length} private users to broadcast list.`);
+        chatIds = [...chatIds, ...privateUserIds];
+    } catch (err) {
+        console.warn('[Telegram] Failed to fetch private users for broadcast:', err.message);
+    }
+
+    // 3. Fallback to the environment variable TELEGRAM_CHAT_ID ONLY if the list is still completely empty
+    if (chatIds.length === 0) {
+        const chatIdsStr = configService.get('TELEGRAM_CHAT_ID');
+        if (chatIdsStr) {
+            chatIds = chatIdsStr.split(',').map(id => id.trim()).filter(Boolean);
+        }
+    }
+
+    // Deduplicate chatIds
+    chatIds = [...new Set(chatIds)];
+
+    if (chatIds.length === 0) throw new Error('No valid Telegram Chat IDs found.');
+
+    console.log(`[Telegram Broadcast] Starting broadcast to ${chatIds.length} targets...`);
+
+    let successCount = 0;
+    let lastId = null;
+    let errors = [];
+
+    // Parallel broadcasting with concurrency limit to respect Telegram's limits (~30/sec)
+    const BATCH_SIZE = 15; // Faster batches
+    const DELAY_BETWEEN_BATCHES = 500; // ms
+
+    const sendToChat = async (chatId) => {
+        const maxRetries = 1;
+        let attempt = 0;
+        let currentChatId = chatId;
+
+        while (attempt <= maxRetries) {
+            try {
+                const form = new FormData();
+                form.append('chat_id', currentChatId);
+                form.append('caption', caption);
+                form.append('photo', imageBuffer, { filename: 'image.jpg' });
+
+                const response = await axios.post(
+                    `https://api.telegram.org/bot${botToken}/sendPhoto`,
+                    form,
+                    { headers: form.getHeaders(), timeout: 30000 }
+                );
+
+                if (response.data.ok) {
+                    lastId = response.data.result.message_id;
+                    successCount++;
+                    return; // Success
+                } else {
+                    throw new Error(response.data.description);
+                }
+            } catch (error) {
+                const errorMsg = error.response?.data?.description || error.message;
+
+                // Group ID Auto-healing: If "chat not found" and it looks like a supergroup ID missing -100
+                if (errorMsg.toLowerCase().includes('chat not found') && attempt === 0) {
+                    const idStr = String(currentChatId);
+                    let healedId = null;
+
+                    // Case 1: ID is like 5020601636 (no prefix)
+                    if (!idStr.startsWith('-') && idStr.length >= 7) {
+                        healedId = `-100${idStr}`;
+                    }
+                    // Case 2: ID is like -5020601636 (missing 100)
+                    else if (idStr.startsWith('-') && !idStr.startsWith('-100') && idStr.length >= 8) {
+                        healedId = `-100${idStr.substring(1)}`;
+                    }
+
+                    if (healedId) {
+                        console.log(`[Telegram] Healing Chat ID ${currentChatId} -> ${healedId}`);
+                        currentChatId = healedId;
+                        attempt++;
+                        continue;
+                    }
+                }
+
+                errors.push(`Chat ${chatId}: ${errorMsg}`);
+                return; // Give up on this chat
+            }
+        }
+    };
+
+    // Process in batches
+    for (let i = 0; i < chatIds.length; i += BATCH_SIZE) {
+        const batch = chatIds.slice(i, i + BATCH_SIZE);
+        await Promise.all(batch.map(id => sendToChat(id)));
+
+        if (i + BATCH_SIZE < chatIds.length) {
+            await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_BATCHES));
+        }
+    }
+
+    console.log(`[Telegram Broadcast] Finished. Success: ${successCount}, Failed: ${errors.length}`);
+
+    if (successCount === 0 && chatIds.length > 0) {
+        throw new Error(`Telegram failed to send to any chats. Errors: ${errors.slice(0, 3).join(' | ')}...`);
+    } else if (errors.length > 0) {
+        console.warn(`[Telegram] Partially succeeded, but failed for some: ${errors.slice(0, 5).join(' | ')}`);
+    }
+
+    return {
+        success: true,
+        platform: 'Telegram',
+        id: lastId,
+        partialErrors: errors.length > 0 ? errors : undefined
+    };
+};
+
+const publishToWhatsApp = async (caption, imageBuffer, contentType, originalFilename, post) => {
+    let targetGroupNames = [];
+    let targetNumbers = [];
+
+    try {
+        const platformSettings = typeof post.platform_settings === 'string'
+            ? JSON.parse(post.platform_settings)
+            : (post.platform_settings || {});
+
+        if (platformSettings.WhatsApp) {
+            if (platformSettings.WhatsApp.groups && platformSettings.WhatsApp.groups.length > 0) {
+                targetGroupNames = platformSettings.WhatsApp.groups;
+            }
+            if (platformSettings.WhatsApp.numbers && platformSettings.WhatsApp.numbers.trim() !== '') {
+                targetNumbers = platformSettings.WhatsApp.numbers.split(',')
+                    .map(n => n.trim().replace(/\+/g, '').replace(/[^0-9]/g, ''))
+                    .filter(Boolean);
+            }
+        }
+    } catch (e) {
+        console.warn('[WhatsApp] Could not parse platform_settings for groups/numbers.');
+    }
+
+    if (targetGroupNames.length === 0 && targetNumbers.length === 0) {
+        const fallbackGroup = configService.get('WHATSAPP_GROUP_NAME');
+        if (fallbackGroup) {
+            targetGroupNames = [fallbackGroup];
+        } else {
+            throw new Error('No WhatsApp groups or numbers selected, and no fallback group found in settings.');
+        }
+    }
+
+    if (!isWhatsAppReady || !whatsappClient) {
+        throw new Error('WhatsApp client is not ready. Please connect via Settings first.');
     }
 
     try {
-        // WhatsApp Cloud API - Send Image Message
-        const response = await axios.post(
-            `https://graph.facebook.com/v18.0/${phoneId}/messages`,
-            {
-                messaging_product: 'whatsapp',
-                to: toPhone,
-                type: 'image',
-                image: {
-                    link: imageUrl,
-                    caption: caption
-                }
-            },
-            {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                }
-            }
-        );
+        const chats = await whatsappClient.getChats();
+        const base64Image = imageBuffer.toString('base64');
+        const media = new MessageMedia(contentType, base64Image, originalFilename || 'image.jpg');
 
-        return { success: true, platform: 'WhatsApp', id: response.data.messages[0].id };
+        let successCount = 0;
+        let lastId = null;
+        let errors = [];
+
+        for (const groupName of targetGroupNames) {
+            console.log(`[WhatsApp] Searching for chat/group named: "${groupName}"`);
+            const targetChat = chats.find(chat => chat.name && chat.name.toLowerCase() === groupName.toLowerCase());
+
+            if (!targetChat) {
+                console.warn(`[WhatsApp] Could not find a WhatsApp chat or group named "${groupName}". Skipping.`);
+                errors.push(`Group not found: ${groupName}`);
+                continue;
+            }
+
+            console.log(`[WhatsApp] Sending to ${targetChat.name} (${targetChat.id._serialized})...`);
+            try {
+                const response = await targetChat.sendMessage(media, { caption: caption });
+                lastId = response.id._serialized;
+                successCount++;
+            } catch (err) {
+                console.error(`[WhatsApp] Failed sending to ${groupName}:`, err);
+                errors.push(`Failed sending to ${groupName}: ${err.message}`);
+            }
+        }
+
+        for (const number of targetNumbers) {
+            const chatId = `${number}@c.us`;
+            console.log(`[WhatsApp] Sending to direct number: ${chatId}`);
+            try {
+                // whatsappClient.sendMessage accepts the serialized ID directly
+                const response = await whatsappClient.sendMessage(chatId, media, { caption: caption });
+                lastId = response.id._serialized;
+                successCount++;
+            } catch (err) {
+                console.error(`[WhatsApp] Failed sending to number ${number}:`, err);
+                errors.push(`Failed sending to ${number}: ${err.message}`);
+            }
+        }
+
+        if (successCount === 0) {
+            throw new Error(`Failed to send to any WhatsApp targets. Errors: ${errors.join(' | ')}`);
+        }
+
+        return { success: true, platform: 'WhatsApp', id: lastId, partialErrors: errors.length > 0 ? errors : undefined };
     } catch (error) {
-        throw new Error(`WhatsApp failed: ${error.response?.data?.error?.message || error.message}`);
+        console.error('[WhatsApp] Error Details:', error);
+        throw new Error(`WhatsApp failed: ${error.message}`);
     }
 };
 
@@ -225,10 +483,10 @@ const publish = async (platform, post) => {
                 // Instgram needs URL, not buffer
                 return await publishToInstagram(post.caption, url);
             case 'whatsapp':
-                // WhatsApp needs URL
-                return await publishToWhatsApp(post.caption, url);
+                // WhatsApp-web.js needs buffer
+                return await publishToWhatsApp(post.caption, buffer, contentType, post.image_path, post);
             case 'telegram':
-                return await publishToTelegram(post.caption, buffer);
+                return await publishToTelegram(post.caption, buffer, post);
             default:
                 throw new Error(`Platform ${platform} not supported`);
         }
@@ -246,5 +504,83 @@ const publish = async (platform, post) => {
     }
 };
 
-module.exports = { publish };
+// --- New WhatsApp Helper Functions for UI ---
+const getWhatsAppStatus = () => {
+    return {
+        status: authStatus,
+        qrCode: currentQrCode
+    };
+};
+
+const getWhatsAppGroups = async () => {
+    if (!whatsappClient || !isWhatsAppReady) {
+        throw new Error('WhatsApp is not ready. Please connect via Settings first.');
+    }
+    const chats = await whatsappClient.getChats();
+    // Filter to only return groups
+    const groups = chats.filter(chat => chat.isGroup).map(chat => ({
+        id: chat.id._serialized,
+        name: chat.name
+    }));
+    return groups;
+};
+
+const requestWhatsAppPairingCode = async (phoneNumber) => {
+    if (!whatsappClient) {
+        throw new Error('WhatsApp client is not initialized.');
+    }
+
+    try {
+        // whatsapp-web.js requires the number to be cleaned (numbers only, no + or spaces)
+        const cleanNumber = phoneNumber.replace(/[^0-9]/g, '');
+
+        // CRITICAL FIX: The library fails to expose this function to the browser if the phone
+        // number wasn't provided at startup. We dynamically inject it here before requesting!
+        try {
+            await whatsappClient.pupPage.exposeFunction('onCodeReceivedEvent', (code) => {
+                return code;
+            });
+        } catch (e) {
+            // Function is already exposed (safe to ignore)
+        }
+
+        console.log(`[WhatsApp] Requesting pairing code for ${cleanNumber}`);
+        const code = await whatsappClient.requestPairingCode(cleanNumber);
+        return code;
+    } catch (error) {
+        console.error('[WhatsApp] Pairing code error:', error);
+        throw new Error(`Failed to request pairing code: ${error.message}`);
+    }
+};
+
+const disconnectWhatsApp = async () => {
+    console.log('[WhatsApp] Disconnecting client...');
+    if (whatsappClient) {
+        try {
+            await whatsappClient.logout();
+            await whatsappClient.destroy();
+        } catch (err) {
+            console.error('Error during logout/destroy:', err);
+        }
+    }
+    whatsappClient = null;
+    isWhatsAppReady = false;
+    currentQrCode = null;
+    authStatus = 'INITIALIZING';
+
+    // Completely wipe the unneeded session folder to force a clean re-auth
+    try {
+        const fs = require('fs');
+        if (fs.existsSync('./whatsapp-session')) {
+            fs.rmSync('./whatsapp-session', { recursive: true, force: true });
+        }
+    } catch (e) {
+        console.error("Failed to delete whatsapp-session folder:", e);
+    }
+
+    // Give it a second, then reinitialize
+    setTimeout(initializeWhatsApp, 1000);
+};
+
+module.exports = { publish, getWhatsAppStatus, getWhatsAppGroups, requestWhatsAppPairingCode, disconnectWhatsApp };
 

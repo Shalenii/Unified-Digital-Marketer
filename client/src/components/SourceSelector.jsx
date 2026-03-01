@@ -14,7 +14,7 @@ const SourceSelector = ({ mode, setMode, onImageSelect }) => {
     const fetchImages = async () => {
         setLoading(true);
         try {
-            const res = await fetch(`http://localhost:3001/api/source-images?date=${selectedDate}`);
+            const res = await fetch(`/api/source-images?date=${selectedDate}`);
             const data = await res.json();
             setImages(data.images || []);
         } catch (err) {
@@ -57,8 +57,8 @@ const SourceSelector = ({ mode, setMode, onImageSelect }) => {
                         {loading && <p>Loading...</p>}
                         {!loading && images.length === 0 && <p className="no-data">No images found for this date at <code>server/source_content/{selectedDate}</code></p>}
                         {images.map(img => (
-                            <div key={img} className="image-item" onClick={() => onImageSelect(`${selectedDate}/${img}`, `http://localhost:3001/source_content/${selectedDate}/${img}`)}>
-                                <img src={`http://localhost:3001/source_content/${selectedDate}/${img}`} alt={img} />
+                            <div key={img} className="image-item" onClick={() => onImageSelect(`${selectedDate}/${img}`, `/source_content/${selectedDate}/${img}`)}>
+                                <img src={`/source_content/${selectedDate}/${img}`} alt={img} />
                                 <span>{img}</span>
                             </div>
                         ))}
