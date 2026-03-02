@@ -125,7 +125,10 @@ const downloadImage = async (imagePath) => {
     if (imagePath && (imagePath.startsWith('http://') || imagePath.startsWith('https://'))) {
         console.log(`[Storage] Using direct URL: ${imagePath}`);
         try {
-            const response = await axios.get(imagePath, { responseType: 'arraybuffer' });
+            const response = await axios.get(imagePath, {
+                responseType: 'arraybuffer',
+                timeout: 15000 // 15s timeout
+            });
             return {
                 buffer: Buffer.from(response.data, 'binary'),
                 contentType: response.headers['content-type'] || 'image/jpeg',
@@ -196,7 +199,10 @@ const publishToFacebook = async (caption, imageBuffer) => {
         const response = await axios.post(
             `https://graph.facebook.com/${pageId}/photos`,
             form,
-            { headers: form.getHeaders() }
+            {
+                headers: form.getHeaders(),
+                timeout: 15000 // 15s timeout
+            }
         );
 
         return { success: true, platform: 'Facebook', id: response.data.id };
@@ -330,7 +336,10 @@ const publishToTelegram = async (caption, imageBuffer, post) => {
                 const response = await axios.post(
                     `https://api.telegram.org/bot${botToken}/sendPhoto`,
                     form,
-                    { headers: form.getHeaders(), timeout: 30000 }
+                    {
+                        headers: form.getHeaders(),
+                        timeout: 15000 // 15s timeout
+                    }
                 );
 
                 if (response.data.ok) {
