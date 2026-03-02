@@ -1,40 +1,18 @@
-# Use official Node.js image with Debian (has apt-get for Chrome deps)
-FROM node:20-slim
+# Use full Debian Bookworm (not slim) for better package availability
+FROM node:20-bookworm
 
-# Install Chromium and all required system libraries
+# Install Chromium (and its dependencies) cleanly
 RUN apt-get update && apt-get install -y \
     chromium \
-    libglib2.0-0 \
-    libnss3 \
-    libnspr4 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libdrm2 \
-    libxkbcommon0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxrandr2 \
-    libgbm1 \
-    libasound2 \
-    libpango-1.0-0 \
-    libcairo2 \
-    libx11-6 \
-    libxcb1 \
-    libxext6 \
-    libxfixes3 \
-    fonts-liberation \
-    wget \
-    --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
-# Tell Puppeteer to use the installed Chromium
+# Tell Puppeteer to use system Chromium (skip downloading its own)
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 WORKDIR /app
 
-# Install dependencies
+# Install npm dependencies
 COPY package*.json ./
 RUN npm install
 
