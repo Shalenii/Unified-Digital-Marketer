@@ -215,9 +215,13 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
                 } catch (pubErr) {
                     console.error('[Immediate Publish Error]:', pubErr.message || pubErr);
 
+                    const errMsg = pubErr.response ? JSON.stringify(pubErr.response.data) : (pubErr.stack || pubErr.message || String(pubErr));
                     await supabase
                         .from('posts')
-                        .update({ status: 'Failed' })
+                        .update({
+                            status: 'Failed',
+                            internal_notes: `[Vercel Error] ${errMsg}`
+                        })
                         .eq('id', post.id);
                 }
             };
