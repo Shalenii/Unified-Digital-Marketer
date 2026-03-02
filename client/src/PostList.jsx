@@ -4,7 +4,8 @@ import PostOptionsDropdown from './components/PostOptionsDropdown';
 import RescheduleModal from './components/RescheduleModal';
 
 // START: App Configuration
-const API_BASE_URL = 'http://localhost:3001'; // Default local, Vercel will be relative
+// In production (Vercel), VITE_API_URL points to Railway backend. Locally, use localhost:3001.
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 const getImageUrl = (path) => {
     if (!path) return '';
