@@ -196,95 +196,12 @@ const Settings = () => {
                             </div>
                         ))}
                         {groupName === 'WhatsApp Web (Groups)' && (
-                            <div className="whatsapp-auth-section" style={{ marginTop: '1.5rem', padding: '1rem', background: '#f8f9fa', borderRadius: '8px', border: '1px solid #ddd' }}>
-                                <h4 style={{ margin: '0 0 1rem 0', color: '#000' }}>WhatsApp Connection Status</h4>
-
-                                {whatsappFetchError && (
-                                    <div style={{ color: 'red', fontSize: '0.85rem', padding: '0.5rem', background: '#fff0f0', borderRadius: '4px' }}>
-                                        ⚠️ {whatsappFetchError}<br />
-                                        <small>Make sure VITE_API_URL is set to your Railway URL in Vercel.</small>
-                                    </div>
-                                )}
-
-                                {!whatsappFetchError && whatsappStatus === 'INITIALIZING' && (
-                                    <div style={{ color: '#555' }}>⏳ Initializing WhatsApp Client. Please wait...</div>
-                                )}
-
-                                {whatsappStatus === 'QR_READY' && (
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2rem' }}>
-                                        {/* QR Code Section */}
-                                        {whatsappQr && (
-                                            <div style={{ flex: '1', minWidth: '250px', textAlign: 'center' }}>
-                                                <p style={{ margin: '0 0 1rem 0', color: '#333', fontWeight: 'bold' }}>Option 1: Scan this code with your phone</p>
-                                                <div style={{ background: 'white', padding: '1rem', display: 'inline-block', borderRadius: '8px', border: '1px solid #eee' }}>
-                                                    <QRCodeSVG value={whatsappQr} size={200} />
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* Phone Number Pairing Section */}
-                                        <div style={{ flex: '1', minWidth: '250px', display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
-                                            <p style={{ margin: '0', color: '#333', fontWeight: 'bold' }}>Option 2: Link with Phone Number</p>
-
-                                            <div style={{ display: 'flex', gap: '8px' }}>
-                                                <input
-                                                    type="text"
-                                                    placeholder="Enter number (e.g. 14155552671)"
-                                                    value={phoneNumber}
-                                                    onChange={(e) => setPhoneNumber(e.target.value)}
-                                                    style={{ flex: 1, padding: '8px', borderRadius: '4px', border: '1px solid #ccc', color: '#000', background: '#fff' }}
-                                                />
-                                                <button
-                                                    className="btn-primary"
-                                                    onClick={handleRequestPairing}
-                                                    disabled={requestingPairing}
-                                                    style={{ padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', background: '#3b82f6', color: 'white', border: 'none' }}
-                                                >
-                                                    {requestingPairing ? '...' : 'Get Code'}
-                                                </button>
-                                            </div>
-
-                                            {pairingError && <div style={{ color: 'red', fontSize: '0.85rem' }}>{pairingError}</div>}
-
-                                            {pairingCode && (
-                                                <div style={{ marginTop: '10px', padding: '15px', background: '#fff', border: '1px solid #ccc', borderRadius: '8px', textAlign: 'center' }}>
-                                                    <p style={{ margin: '0 0 5px 0', fontSize: '0.9rem', color: '#555' }}>Your 8-Character Pairing Code:</p>
-                                                    <h2 style={{ margin: '0', fontSize: '2rem', letterSpacing: '4px', color: '#000' }}>{pairingCode}</h2>
-                                                    <p style={{ margin: '10px 0 0 0', fontSize: '0.8rem', color: '#333' }}>
-                                                        Open WhatsApp &gt; Linked Devices &gt; Link with Phone Number. Type this code in within 15 seconds.
-                                                    </p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {whatsappStatus === 'AUTHENTICATED' && (
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(16, 185, 129, 0.1)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-                                        <div style={{ color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 'bold' }}>
-                                            <span style={{ fontSize: '1.2rem' }}>✅</span> Successfully Connected to WhatsApp!
-                                        </div>
-                                        <button
-                                            onClick={handleDisconnectWhatsApp}
-                                            style={{ padding: '8px 16px', background: 'var(--error)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
-                                        >
-                                            Disconnect
-                                        </button>
-                                    </div>
-                                )}
-
-                                {whatsappStatus === 'NOT_SUPPORTED_ON_VERCEL' && (
-                                    <div style={{ color: '#555', padding: '0.5rem', background: '#fff8e1', borderRadius: '4px', border: '1px solid #ffe082' }}>
-                                        ⚠️ WhatsApp runs on Railway, not Vercel directly.<br />
-                                        <small>Set <strong>VITE_API_URL</strong> in Vercel to your Railway backend URL.</small>
-                                    </div>
-                                )}
-
-                                {whatsappStatus === 'FAILED' && (
-                                    <div style={{ color: 'var(--error)' }}>
-                                        ❌ Authentication failed. Please restart the server.
-                                    </div>
-                                )}
+                            <div className="whatsapp-auth-section" style={{ marginTop: '1.5rem', padding: '0', borderRadius: '8px', border: '1px solid #ddd', overflow: 'hidden' }}>
+                                <iframe
+                                    src={(settings.PUBLIC_URL || 'https://unified-digital-marketer-production.up.railway.app') + '/whatsapp-connect'}
+                                    style={{ width: '100%', height: '480px', border: 'none' }}
+                                    title="WhatsApp Connection"
+                                />
                             </div>
                         )}
                     </div>
