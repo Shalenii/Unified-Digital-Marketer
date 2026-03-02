@@ -21,6 +21,10 @@
     ],
     "rewrites": [
         {
+            "source": "/api/whatsapp/:path*",
+            "destination": "https://unified-digital-marketer-production.up.railway.app/api/whatsapp/:path*"
+        },
+        {
             "source": "/api/(.*)",
             "destination": "/api/index.js"
         },
