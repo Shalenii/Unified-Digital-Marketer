@@ -269,7 +269,8 @@ const publishToInstagram = async (caption, publicImageUrl) => {
 
     } catch (error) {
         let errorMsg = error.response?.data?.error?.message || error.message;
-        console.error('[Instagram Graph API Error]:', error.response?.data?.error || error);
+        const detailedError = error.response?.data?.error || error;
+        console.error('[Instagram Graph API Error]:', JSON.stringify(detailedError, null, 2));
 
         if (errorMsg.includes('Invalid image_url') || errorMsg.includes('Invalid URL') || errorMsg.includes('Fetch Image Error') || errorMsg.toLowerCase().includes('fetch')) {
             errorMsg += ' (CRITICAL: Meta servers cannot reach localhost. Please ensure your PUBLIC_URL in .env is set to a real ngrok URL like https://xxxx.ngrok-free.app)';
