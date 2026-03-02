@@ -24,9 +24,20 @@ const initializeWhatsApp = () => {
         const qrcode = require('qrcode-terminal');
 
         console.log('[WhatsApp] Initializing client...');
-        // Use system Chromium on Railway via PUPPETEER_EXECUTABLE_PATH env var
-        const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
-        if (executablePath) console.log(`[WhatsApp] Using system Chromium: ${executablePath}`);
+        // Auto-detect system Chromium path (for Railway/Linux)
+        let executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
+        if (!executablePath) {
+            try {
+                const { execSync } = require('child_process');
+                executablePath = execSync('which chromium || which chromium-browser || which google-chrome-stable || which google-chrome').toString().trim();
+                console.log(`[WhatsApp] Auto-detected Chromium: ${executablePath}`);
+            } catch (e) {
+                console.log('[WhatsApp] No system Chromium found, using Puppeteer bundled browser.');
+                executablePath = undefined;
+            }
+        } else {
+            console.log(`[WhatsApp] Using Chromium from env: ${executablePath}`);
+        }
 
         whatsappClient = new Client({
             authStrategy: new LocalAuth({ dataPath: './whatsapp-session' }),
