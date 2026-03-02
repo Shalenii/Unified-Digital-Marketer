@@ -339,13 +339,31 @@ app.delete('/api/telegram/chats/:id', async (req, res) => {
 // --- WhatsApp Endpoints ---
 const socialManager = require('./services/socialManager');
 
+// On Vercel, proxy WhatsApp requests to Railway (WhatsApp-web.js needs persistent server)
+const RAILWAY_BACKEND = process.env.RAILWAY_BACKEND_URL || 'https://unified-digital-marketer-production.up.railway.app';
+
+const proxyToRailway = async (req, res, path, method = 'GET', body = null) => {
+    try {
+        const axios = require('axios');
+        const config = { method, url: `${RAILWAY_BACKEND}${path}`, timeout: 10000 };
+        if (body) { config.data = body; config.headers = { 'Content-Type': 'application/json' }; }
+        const response = await axios(config);
+        res.json(response.data);
+    } catch (error) {
+        const msg = error.response?.data || error.message;
+        res.status(error.response?.status || 502).json({ error: 'Railway proxy error', detail: msg });
+    }
+};
+
 // GET /api/whatsapp/qr - Get current QR or status
-app.get('/api/whatsapp/qr', (req, res) => {
+app.get('/api/whatsapp/qr', async (req, res) => {
+    if (process.env.VERCEL) return proxyToRailway(req, res, '/api/whatsapp/qr');
     res.json(socialManager.getWhatsAppStatus());
 });
 
 // GET /api/whatsapp/groups - Get all groups
 app.get('/api/whatsapp/groups', async (req, res) => {
+    if (process.env.VERCEL) return proxyToRailway(req, res, '/api/whatsapp/groups');
     try {
         const groups = await socialManager.getWhatsAppGroups();
         res.json({ groups });
@@ -356,9 +374,9 @@ app.get('/api/whatsapp/groups', async (req, res) => {
 
 // POST /api/whatsapp/pair - Request pairing code
 app.post('/api/whatsapp/pair', async (req, res) => {
+    if (process.env.VERCEL) return proxyToRailway(req, res, '/api/whatsapp/pair', 'POST', req.body);
     const { phoneNumber } = req.body;
     if (!phoneNumber) return res.status(400).json({ error: 'Phone number is required' });
-
     try {
         const code = await socialManager.requestWhatsAppPairingCode(phoneNumber);
         res.json({ success: true, code });
@@ -369,6 +387,7 @@ app.post('/api/whatsapp/pair', async (req, res) => {
 
 // POST /api/whatsapp/disconnect - Logout and reset session
 app.post('/api/whatsapp/disconnect', async (req, res) => {
+    if (process.env.VERCEL) return proxyToRailway(req, res, '/api/whatsapp/disconnect', 'POST', {});
     try {
         await socialManager.disconnectWhatsApp();
         res.json({ success: true, message: 'Disconnected' });
