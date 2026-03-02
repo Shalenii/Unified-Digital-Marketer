@@ -189,45 +189,45 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
         // If immediate, trigger publishing logic NOW
         if (initialStatus === 'Processing') {
             const socialManager = require('./services/socialManager');
-            const { waitUntil } = require('@vercel/functions');
 
-            // Wait for it to finish officially before responding so it doesn't get killed
+            // RESPOND IMMEDIATELY - don't make user wait for Instagram's API
+            res.json({
+                message: 'Post received! Publishing in background...',
+                post: { ...post, status: 'Processing' }
+            });
+
+            // Use waitUntil so Vercel keeps process alive after response is sent
             try {
-                const platformList = JSON.parse(platforms || '[]');
-                for (const p of platformList) {
-                    console.log(`[Immediate Publish] Attempting to publish to ${p} for post ${post.id}`);
-                    await socialManager.publish(p, post);
-                }
-
-                // Update DB to Published
-                await supabase
-                    .from('posts')
-                    .update({ status: 'Published' })
-                    .eq('id', post.id);
-
-                // 1. Send immediate response to frontend AFTER it finishes
-                res.json({
-                    message: 'Post published successfully',
-                    post: { ...post, status: 'Published' }
-                });
-
-            } catch (pubErr) {
-                console.error('[Immediate Publish Error]:', pubErr.message || pubErr);
-
-                const errMsg = pubErr.response ? JSON.stringify(pubErr.response.data) : (pubErr.stack || pubErr.message || String(pubErr));
-                await supabase
-                    .from('posts')
-                    .update({
-                        status: 'Failed',
-                        internal_notes: `[Vercel Error] ${errMsg}`
-                    })
-                    .eq('id', post.id);
-
-                res.status(500).json({
-                    error: 'Publishing Failed',
-                    details: errMsg,
-                    post: { ...post, status: 'Failed', internal_notes: `[Vercel Error] ${errMsg}` }
-                });
+                const { waitUntil } = require('@vercel/functions');
+                waitUntil((async () => {
+                    try {
+                        const platformList = JSON.parse(platforms || '[]');
+                        for (const p of platformList) {
+                            console.log(`[Background Publish] Publishing to ${p} for post ${post.id}`);
+                            await socialManager.publish(p, post);
+                        }
+                        await supabase.from('posts').update({ status: 'Published' }).eq('id', post.id);
+                        console.log(`[Background Publish] Post ${post.id} published successfully.`);
+                    } catch (pubErr) {
+                        console.error('[Background Publish Error]:', pubErr.message);
+                        const errMsg = pubErr.response ? JSON.stringify(pubErr.response.data) : (pubErr.stack || pubErr.message || String(pubErr));
+                        await supabase.from('posts').update({ status: 'Failed', internal_notes: `[Error] ${errMsg}` }).eq('id', post.id);
+                    }
+                })());
+            } catch (e) {
+                // Fallback: waitUntil not available (local dev), just fire-and-forget
+                (async () => {
+                    try {
+                        const platformList = JSON.parse(platforms || '[]');
+                        for (const p of platformList) {
+                            await socialManager.publish(p, post);
+                        }
+                        await supabase.from('posts').update({ status: 'Published' }).eq('id', post.id);
+                    } catch (pubErr) {
+                        console.error('[Fallback Publish Error]:', pubErr.message);
+                        await supabase.from('posts').update({ status: 'Failed', internal_notes: pubErr.message }).eq('id', post.id);
+                    }
+                })();
             }
 
         } else {
