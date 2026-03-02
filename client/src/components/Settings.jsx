@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 
 const Settings = () => {
+    // WhatsApp lives on Railway (persistent server), all other API calls go to Vercel
+    const RAILWAY_URL = import.meta.env.VITE_API_URL || '';
     const [settings, setSettings] = useState({});
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(null); // Key being saved
@@ -33,7 +35,7 @@ const Settings = () => {
         let interval;
         const fetchQr = async () => {
             try {
-                const res = await fetch('/api/whatsapp/qr');
+                const res = await fetch(`${RAILWAY_URL}/api/whatsapp/qr`);
                 if (res.ok) {
                     const data = await res.json();
                     setWhatsappStatus(data.status);
@@ -79,7 +81,7 @@ const Settings = () => {
         setPairingError(null);
         setPairingCode(null);
         try {
-            const res = await fetch('/api/whatsapp/pair', {
+            const res = await fetch(`${RAILWAY_URL}/api/whatsapp/pair`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ phoneNumber })
@@ -100,7 +102,7 @@ const Settings = () => {
         if (!window.confirm("Are you sure you want to disconnect WhatsApp? You will need to scan the QR code or link with your phone number again.")) return;
 
         try {
-            const res = await fetch('/api/whatsapp/disconnect', { method: 'POST' });
+            const res = await fetch(`${RAILWAY_URL}/api/whatsapp/disconnect`, { method: 'POST' });
             if (res.ok) {
                 setWhatsappStatus('INITIALIZING');
                 setWhatsappQr(null);
