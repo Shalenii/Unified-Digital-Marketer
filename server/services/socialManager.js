@@ -124,20 +124,14 @@ const downloadImage = async (imagePath) => {
     // If it's already a full URL (from Supabase or elsewhere), handle it
     if (imagePath && (imagePath.startsWith('http://') || imagePath.startsWith('https://'))) {
         console.log(`[Storage] Using direct URL: ${imagePath}`);
-        try {
-            const response = await axios.get(imagePath, {
-                responseType: 'arraybuffer',
-                timeout: 15000 // 15s timeout
-            });
-            return {
-                buffer: Buffer.from(response.data, 'binary'),
-                contentType: response.headers['content-type'] || 'image/jpeg',
-                url: imagePath
-            };
-        } catch (err) {
-            console.error(`[Storage] Failed to download from URL:`, err.message);
-            return { url: imagePath }; // Return URL only as fallback
-        }
+        // We defer the buffer download here to avoid 504 timeouts on Vercel when publishing to Instagram
+        // Instagram only needs the URL string, it does NOT need the buffer. Downloading a 5MB image into memory
+        // inside a Serverless function kills Vercel's free tier time allotment.
+        return {
+            buffer: null, // Defer loading
+            url: imagePath,
+            isRemote: true
+        };
     }
 
     let baseUrl = configService.get('PUBLIC_URL') || 'http://localhost:3001';
@@ -161,14 +155,21 @@ const downloadImage = async (imagePath) => {
 
 
 
-const publishToTwitter = async (caption, imageBuffer, imageType) => {
+const publishToTwitter = async (caption, imageBuffer, imageType, publicImageUrl) => {
     const client = getTwitterClient();
     if (!client) throw new Error('Twitter credentials not found in env');
+
+    let fetchBuffer = imageBuffer;
+    if (!fetchBuffer && publicImageUrl) {
+        console.log(`[Twitter] Downloading deferred buffer from ${publicImageUrl}...`);
+        const response = await axios.get(publicImageUrl, { responseType: 'arraybuffer', timeout: 15000 });
+        fetchBuffer = Buffer.from(response.data, 'binary');
+    }
 
     try {
         // 1. Upload media (Buffer)
         // Twitter API v2 accepts Buffer directly
-        const mediaId = await client.v1.uploadMedia(imageBuffer, { mimeType: imageType });
+        const mediaId = await client.v1.uploadMedia(fetchBuffer, { mimeType: imageType });
 
         // 2. Tweet with media
         await client.v2.tweet({
@@ -183,11 +184,18 @@ const publishToTwitter = async (caption, imageBuffer, imageType) => {
     }
 };
 
-const publishToFacebook = async (caption, imageBuffer) => {
+const publishToFacebook = async (caption, imageBuffer, publicImageUrl) => {
     const token = configService.get('FACEBOOK_PAGE_ACCESS_TOKEN');
     const pageId = configService.get('FACEBOOK_PAGE_ID');
 
     if (!token || !pageId) throw new Error('Facebook credentials not found in env');
+
+    let fetchBuffer = imageBuffer;
+    if (!fetchBuffer && publicImageUrl) {
+        console.log(`[Facebook] Downloading deferred buffer from ${publicImageUrl}...`);
+        const response = await axios.get(publicImageUrl, { responseType: 'arraybuffer', timeout: 15000 });
+        fetchBuffer = Buffer.from(response.data, 'binary');
+    }
 
     try {
         const form = new FormData();
@@ -271,10 +279,17 @@ const publishToInstagram = async (caption, publicImageUrl) => {
     }
 };
 
-const publishToTelegram = async (caption, imageBuffer, post) => {
+const publishToTelegram = async (caption, imageBuffer, post, publicImageUrl) => {
     console.log('[Telegram] publishToTelegram called.');
     const botToken = configService.get('TELEGRAM_BOT_TOKEN');
     if (!botToken) throw new Error('Telegram Bot Token not found in env');
+
+    let fetchBuffer = imageBuffer;
+    if (!fetchBuffer && publicImageUrl) {
+        console.log(`[Telegram] Downloading deferred buffer from ${publicImageUrl}...`);
+        const response = await axios.get(publicImageUrl, { responseType: 'arraybuffer', timeout: 15000 });
+        fetchBuffer = Buffer.from(response.data, 'binary');
+    }
 
     let chatIds = [];
 
@@ -501,9 +516,9 @@ const publish = async (platform, post) => {
 
         switch (platform.toLowerCase()) {
             case 'twitter':
-                return await publishToTwitter(post.caption, buffer, contentType);
+                return await publishToTwitter(post.caption, buffer, contentType, url);
             case 'facebook':
-                return await publishToFacebook(post.caption, buffer);
+                return await publishToFacebook(post.caption, buffer, url);
             case 'instagram':
                 // Instgram needs URL, not buffer
                 return await publishToInstagram(post.caption, url);
@@ -511,7 +526,7 @@ const publish = async (platform, post) => {
                 // WhatsApp-web.js needs buffer
                 return await publishToWhatsApp(post.caption, buffer, contentType, post.image_path, post);
             case 'telegram':
-                return await publishToTelegram(post.caption, buffer, post);
+                return await publishToTelegram(post.caption, buffer, post, url);
             default:
                 throw new Error(`Platform ${platform} not supported`);
         }
