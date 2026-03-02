@@ -1,5 +1,8 @@
 const express = require('express');
 const cors = require('cors');
+
+// Provide global fix for IPv6 hanging issues (same as Supabase issue)
+require('node:dns').setDefaultResultOrder('ipv4first');
 // Load env vars if not in production (Vercel provides them automatically)
 // MUST BE AT THE TOP before other imports use process.env
 if (process.env.NODE_ENV !== 'production') {

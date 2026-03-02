@@ -25,13 +25,17 @@ const runCronJob = async () => {
 
     for (const post of rows) {
         // 1. LOCK: Immediately mark as 'Processing' to prevent next cron from picking it up
-        const { error: lockErr } = await supabase
+        // Ensure atomic update by verifying 'Pending' status
+        const { data: lockData, error: lockErr } = await supabase
             .from('posts')
             .update({ status: 'Processing' })
-            .eq('id', post.id);
+            .eq('id', post.id)
+            .eq('status', 'Pending')
+            .select();
 
-        if (lockErr) {
-            console.error(`Failed to lock post ${post.id}:`, lockErr);
+        if (lockErr || !lockData || lockData.length === 0) {
+            if (lockErr) console.error(`Failed to lock post ${post.id}:`, lockErr);
+            else console.log(`Skipping post ID ${post.id}: Already locked or processed by another worker.`);
             continue;
         }
 

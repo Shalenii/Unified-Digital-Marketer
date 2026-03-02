@@ -225,12 +225,16 @@ const publishToInstagram = async (caption, publicImageUrl) => {
     try {
 
         // Step 1: Create a Media Container
+        // Add a dummy query param to the URL to force Meta to recognize it as an image file
+        // Sometimes localtunnel/ngrok headers obscure the content type, so Meta rejects it without a clear extension
+        const finalImageUrl = publicImageUrl.includes('?') ? `${publicImageUrl}&type=.jpg` : `${publicImageUrl}?type=.jpg`;
+
         const containerRes = await axios.post(
             `https://graph.facebook.com/v19.0/${igAccountId}/media`,
-            null,
+            '',
             {
                 params: {
-                    image_url: publicImageUrl,
+                    image_url: finalImageUrl,
                     caption: caption,
                     access_token: token
                 }
@@ -243,7 +247,7 @@ const publishToInstagram = async (caption, publicImageUrl) => {
         // Step 2: Publish the Container
         const publishRes = await axios.post(
             `https://graph.facebook.com/v19.0/${igAccountId}/media_publish`,
-            null,
+            '',
             {
                 params: {
                     creation_id: creationId,
