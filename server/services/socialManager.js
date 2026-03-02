@@ -24,6 +24,10 @@ const initializeWhatsApp = () => {
         const qrcode = require('qrcode-terminal');
 
         console.log('[WhatsApp] Initializing client...');
+        // Use system Chromium on Railway via PUPPETEER_EXECUTABLE_PATH env var
+        const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
+        if (executablePath) console.log(`[WhatsApp] Using system Chromium: ${executablePath}`);
+
         whatsappClient = new Client({
             authStrategy: new LocalAuth({ dataPath: './whatsapp-session' }),
             webVersionCache: {
@@ -31,7 +35,14 @@ const initializeWhatsApp = () => {
                 remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
             },
             puppeteer: {
-                args: ['--no-sandbox', '--disable-setuid-sandbox'],
+                executablePath,
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-gpu',
+                    '--single-process',
+                ],
             }
         });
 
