@@ -31,15 +31,10 @@ const Settings = () => {
         fetchSettings();
     }, []);
 
-    // Poll for WhatsApp QR Code — wait for settings to load Railway URL
+    // Poll for WhatsApp QR Code — call Railway directly
     useEffect(() => {
-        // REQUIRED: Wait until settings.PUBLIC_URL is definitely loaded
-        if (!settings.PUBLIC_URL) {
-            console.log('[WhatsApp] Waiting for PUBLIC_URL from settings...');
-            return;
-        }
-
-        const RAILWAY_URL = settings.PUBLIC_URL;
+        // Use settings.PUBLIC_URL if available, otherwise use hardcoded Railway URL
+        const RAILWAY_URL = settings.PUBLIC_URL || 'https://unified-digital-marketer-production.up.railway.app';
         console.log(`[WhatsApp] Polling Railway at: ${RAILWAY_URL}`);
 
         let interval;
