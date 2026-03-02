@@ -8,10 +8,6 @@
     ],
     "builds": [
         {
-            "src": "api/whatsapp/qr.js",
-            "use": "@vercel/node"
-        },
-        {
             "src": "api/index.js",
             "use": "@vercel/node"
         },
@@ -25,8 +21,8 @@
     ],
     "rewrites": [
         {
-            "source": "/api/whatsapp/qr",
-            "destination": "/api/whatsapp/qr"
+            "source": "/api/whatsapp/:path*",
+            "destination": "https://unified-digital-marketer-production.up.railway.app/api/whatsapp/:path*"
         },
         {
             "source": "/api/(.*)",
