@@ -45,8 +45,7 @@ const Settings = () => {
         let interval;
         const fetchQr = async () => {
             try {
-                // Ensure we always use the full Railway URL, never a relative Vercel path
-                const res = await fetch(`${RAILWAY_URL}/api/whatsapp/qr`);
+                const res = await fetch(`${RAILWAY_URL}/api/whatsapp/qr`, { cache: 'no-store' });
                 if (res.ok) {
                     const data = await res.json();
                     setWhatsappStatus(data.status);
