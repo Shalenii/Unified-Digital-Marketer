@@ -31,16 +31,21 @@ const Settings = () => {
         fetchSettings();
     }, []);
 
-    // Poll for WhatsApp QR Code — wait for PUBLIC_URL to load first
+    // Poll for WhatsApp QR Code — wait for settings to load Railway URL
     useEffect(() => {
-        const RAILWAY_URL = settings.PUBLIC_URL || import.meta.env.VITE_API_URL || '';
+        // REQUIRED: Wait until settings.PUBLIC_URL is definitely loaded
+        if (!settings.PUBLIC_URL) {
+            console.log('[WhatsApp] Waiting for PUBLIC_URL from settings...');
+            return;
+        }
 
-        // Don't fetch until we know the Railway URL
-        if (!RAILWAY_URL) return;
+        const RAILWAY_URL = settings.PUBLIC_URL;
+        console.log(`[WhatsApp] Polling Railway at: ${RAILWAY_URL}`);
 
         let interval;
         const fetchQr = async () => {
             try {
+                // Ensure we always use the full Railway URL, never a relative Vercel path
                 const res = await fetch(`${RAILWAY_URL}/api/whatsapp/qr`);
                 if (res.ok) {
                     const data = await res.json();
@@ -52,21 +57,22 @@ const Settings = () => {
                         clearInterval(interval);
                     }
                 } else {
-                    setWhatsappFetchError(`Server error: ${res.status}`);
+                    const errorJson = await res.json().catch(() => ({}));
+                    setWhatsappFetchError(`Railway Error (${res.status}): ${errorJson.error || 'Unknown'}`);
                 }
             } catch (error) {
                 console.error('Failed to fetch WhatsApp QR:', error);
-                setWhatsappFetchError(`Cannot reach Railway backend: ${error.message}`);
+                setWhatsappFetchError(`Connection Failed: ${error.message} (Is Railway Online?)`);
             }
         };
 
         if (whatsappStatus !== 'AUTHENTICATED') {
-            fetchQr(); // Fetch immediately
-            interval = setInterval(fetchQr, 5000); // Poll every 5s
+            fetchQr();
+            interval = setInterval(fetchQr, 5000);
         }
 
         return () => clearInterval(interval);
-    }, [whatsappStatus, settings.PUBLIC_URL]);
+    }, [settings.PUBLIC_URL, whatsappStatus]);
 
     const fetchSettings = async () => {
         try {
