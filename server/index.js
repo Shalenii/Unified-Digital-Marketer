@@ -200,18 +200,36 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
             try {
                 const { waitUntil } = require('@vercel/functions');
                 waitUntil((async () => {
-                    try {
-                        const platformList = JSON.parse(platforms || '[]');
-                        for (const p of platformList) {
-                            console.log(`[Background Publish] Publishing to ${p} for post ${post.id}`);
+                    const platformList = JSON.parse(platforms || '[]');
+                    const results = [];
+                    const errors = [];
+
+                    // Run all platforms in PARALLEL to avoid Vercel timeouts (10s limit)
+                    await Promise.all(platformList.map(async (p) => {
+                        try {
+                            console.log(`[Background Publish] Starting ${p} for post ${post.id}`);
                             await socialManager.publish(p, post);
+                            results.push(p);
+                            console.log(`[Background Publish] ${p} success for post ${post.id}`);
+                        } catch (pubErr) {
+                            console.error(`[Background Publish] ${p} FAILED:`, pubErr.message);
+                            errors.push(`${p}: ${pubErr.message}`);
                         }
-                        await supabase.from('posts').update({ status: 'Published' }).eq('id', post.id);
-                        console.log(`[Background Publish] Post ${post.id} published successfully.`);
-                    } catch (pubErr) {
-                        console.error('[Background Publish Error]:', pubErr.message);
-                        const errMsg = pubErr.response ? JSON.stringify(pubErr.response.data) : (pubErr.stack || pubErr.message || String(pubErr));
-                        await supabase.from('posts').update({ status: 'Failed', internal_notes: `[Error] ${errMsg}` }).eq('id', post.id);
+                    }));
+
+                    // Determine final status
+                    if (errors.length === 0) {
+                        await supabase.from('posts').update({ status: 'Published', internal_notes: `Published to: ${results.join(', ')}` }).eq('id', post.id);
+                    } else if (results.length > 0) {
+                        await supabase.from('posts').update({
+                            status: 'Published',
+                            internal_notes: `Partial Success. OK: ${results.join(', ')} | ERR: ${errors.join('; ')}`
+                        }).eq('id', post.id);
+                    } else {
+                        await supabase.from('posts').update({
+                            status: 'Failed',
+                            internal_notes: `All platforms failed: ${errors.join('; ')}`
+                        }).eq('id', post.id);
                     }
                 })());
             } catch (e) {
