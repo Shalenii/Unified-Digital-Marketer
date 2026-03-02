@@ -189,40 +189,47 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
         // If immediate, trigger publishing logic NOW
         if (initialStatus === 'Processing') {
             const socialManager = require('./services/socialManager');
+            const { waitUntil } = require('@vercel/functions');
 
-            try {
-                const platformList = JSON.parse(platforms || '[]');
-                for (const p of platformList) {
-                    console.log(`[Immediate Publish] Attempting to publish to ${p} for post ${post.id}`);
-                    await socialManager.publish(p, post);
+            // 1. Send immediate response to frontend
+            res.json({
+                message: 'Post processing started immediately',
+                post: { ...post, status: 'Processing' }
+            });
+
+            // 2. Wrap the long-running task in waitUntil to prevent Vercel from freezing the instance
+            const publishTask = async () => {
+                try {
+                    const platformList = JSON.parse(platforms || '[]');
+                    for (const p of platformList) {
+                        console.log(`[Immediate Publish] Attempting to publish to ${p} for post ${post.id}`);
+                        await socialManager.publish(p, post);
+                    }
+
+                    // Update DB to Published
+                    await supabase
+                        .from('posts')
+                        .update({ status: 'Published' })
+                        .eq('id', post.id);
+
+                } catch (pubErr) {
+                    console.error('[Immediate Publish Error]:', pubErr.message || pubErr);
+
+                    await supabase
+                        .from('posts')
+                        .update({ status: 'Failed' })
+                        .eq('id', post.id);
                 }
+            };
 
-                // Update DB to Published
-                await supabase
-                    .from('posts')
-                    .update({ status: 'Published' })
-                    .eq('id', post.id);
-
-                res.json({
-                    message: 'Post published successfully',
-                    post: { ...post, status: 'Published' }
-                });
-
-            } catch (pubErr) {
-                console.error('[Immediate Publish Error]:', pubErr.message || pubErr);
-
-                await supabase
-                    .from('posts')
-                    .update({ status: 'Failed' })
-                    .eq('id', post.id);
-
-                // Note: Even if it failed to publish immediately, the post was recorded.
-                res.status(500).json({
-                    error: 'Failed to publish post immediately',
-                    details: pubErr.message || pubErr,
-                    post: { ...post, status: 'Failed' }
-                });
+            // Register background work via Vercel's official utility
+            // Note: On local non-Vercel runtimes this acts as a simple background async call.
+            if (process.env.VERCEL) {
+                waitUntil(publishTask());
+            } else {
+                publishTask(); // Fast fire-and-forget for local dev testing
             }
+
         } else {
             res.json({ message: 'Post scheduled successfully', post });
         }
