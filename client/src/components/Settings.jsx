@@ -10,6 +10,7 @@ const Settings = () => {
     const [message, setMessage] = useState(null);
     const [whatsappStatus, setWhatsappStatus] = useState('INITIALIZING');
     const [whatsappQr, setWhatsappQr] = useState(null);
+    const [whatsappFetchError, setWhatsappFetchError] = useState(null);
 
     // Pairing Code State
     const [phoneNumber, setPhoneNumber] = useState('');
@@ -40,13 +41,17 @@ const Settings = () => {
                     const data = await res.json();
                     setWhatsappStatus(data.status);
                     setWhatsappQr(data.qrCode);
+                    setWhatsappFetchError(null);
 
                     if (data.status === 'AUTHENTICATED') {
                         clearInterval(interval);
                     }
+                } else {
+                    setWhatsappFetchError(`Server error: ${res.status}`);
                 }
             } catch (error) {
                 console.error('Failed to fetch WhatsApp QR:', error);
+                setWhatsappFetchError(`Cannot reach Railway backend. Check VITE_API_URL. (${error.message})`);
             }
         };
 
@@ -187,7 +192,14 @@ const Settings = () => {
                             <div className="whatsapp-auth-section" style={{ marginTop: '1.5rem', padding: '1rem', background: '#f8f9fa', borderRadius: '8px', border: '1px solid #ddd' }}>
                                 <h4 style={{ margin: '0 0 1rem 0', color: '#000' }}>WhatsApp Connection Status</h4>
 
-                                {whatsappStatus === 'INITIALIZING' && (
+                                {whatsappFetchError && (
+                                    <div style={{ color: 'red', fontSize: '0.85rem', padding: '0.5rem', background: '#fff0f0', borderRadius: '4px' }}>
+                                        ⚠️ {whatsappFetchError}<br />
+                                        <small>Make sure VITE_API_URL is set to your Railway URL in Vercel.</small>
+                                    </div>
+                                )}
+
+                                {!whatsappFetchError && whatsappStatus === 'INITIALIZING' && (
                                     <div style={{ color: '#555' }}>⏳ Initializing WhatsApp Client. Please wait...</div>
                                 )}
 
@@ -251,6 +263,13 @@ const Settings = () => {
                                         >
                                             Disconnect
                                         </button>
+                                    </div>
+                                )}
+
+                                {whatsappStatus === 'NOT_SUPPORTED_ON_VERCEL' && (
+                                    <div style={{ color: '#555', padding: '0.5rem', background: '#fff8e1', borderRadius: '4px', border: '1px solid #ffe082' }}>
+                                        ⚠️ WhatsApp runs on Railway, not Vercel directly.<br />
+                                        <small>Set <strong>VITE_API_URL</strong> in Vercel to your Railway backend URL.</small>
                                     </div>
                                 )}
 
