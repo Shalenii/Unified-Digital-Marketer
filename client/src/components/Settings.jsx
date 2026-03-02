@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 
 const Settings = () => {
-    // WhatsApp lives on Railway (persistent server), all other API calls go to Vercel
-    const RAILWAY_URL = import.meta.env.VITE_API_URL || '';
+    // WhatsApp API base: use PUBLIC_URL from settings (Railway URL), fallback to VITE_API_URL or same-origin
+    // This is set AFTER settings load, so WhatsApp polling re-checks when settings are available
     const [settings, setSettings] = useState({});
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(null); // Key being saved
@@ -31,8 +31,10 @@ const Settings = () => {
         fetchSettings();
     }, []);
 
-    // Poll for WhatsApp QR Code
+    // Poll for WhatsApp QR Code — restart when settings load (to get PUBLIC_URL)
     useEffect(() => {
+        // Use PUBLIC_URL from settings as Railway base URL (most reliable)
+        const RAILWAY_URL = settings.PUBLIC_URL || import.meta.env.VITE_API_URL || '';
         let interval;
         const fetchQr = async () => {
             try {
@@ -61,7 +63,7 @@ const Settings = () => {
         }
 
         return () => clearInterval(interval);
-    }, [whatsappStatus]);
+    }, [whatsappStatus, settings.PUBLIC_URL]);
 
     const fetchSettings = async () => {
         try {
@@ -86,6 +88,7 @@ const Settings = () => {
         setPairingError(null);
         setPairingCode(null);
         try {
+            const RAILWAY_URL = settings.PUBLIC_URL || import.meta.env.VITE_API_URL || '';
             const res = await fetch(`${RAILWAY_URL}/api/whatsapp/pair`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -107,6 +110,7 @@ const Settings = () => {
         if (!window.confirm("Are you sure you want to disconnect WhatsApp? You will need to scan the QR code or link with your phone number again.")) return;
 
         try {
+            const RAILWAY_URL = settings.PUBLIC_URL || import.meta.env.VITE_API_URL || '';
             const res = await fetch(`${RAILWAY_URL}/api/whatsapp/disconnect`, { method: 'POST' });
             if (res.ok) {
                 setWhatsappStatus('INITIALIZING');
