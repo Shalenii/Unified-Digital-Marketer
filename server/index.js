@@ -336,6 +336,65 @@ app.delete('/api/telegram/chats/:id', async (req, res) => {
     }
 });
 
+// --- WhatsApp Connect Page (served from Railway) ---
+// Simple HTML page the user can open to scan QR code directly
+app.get('/whatsapp-connect', (req, res) => {
+    res.setHeader('Content-Type', 'text/html');
+    res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connect WhatsApp</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #f0f2f5; }
+        .card { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 2px 16px rgba(0,0,0,0.1); text-align: center; max-width: 400px; width: 90%; }
+        h1 { color: #25D366; margin-top: 0; }
+        #qr-container { margin: 1.5rem auto; }
+        #status { color: #555; margin-top: 1rem; font-size: 0.9rem; }
+        .tag { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 0.8rem; margin-top: 0.5rem; }
+        .tag.ready { background: #e8f5e9; color: #2e7d32; }
+        .tag.waiting { background: #fff3cd; color: #856404; }
+        .tag.connected { background: #d4edda; color: #155724; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>📱 Connect WhatsApp</h1>
+        <div id="qr-container"></div>
+        <div id="status"><span class="tag waiting">⏳ Loading...</span></div>
+        <p style="color:#888;font-size:0.8rem">Open WhatsApp → Linked Devices → Link a Device → Scan this code</p>
+    </div>
+    <script>
+        let qrInstance = null;
+        async function pollStatus() {
+            try {
+                const res = await fetch('/api/whatsapp/qr?t=' + Date.now());
+                const data = await res.json();
+                const statusEl = document.getElementById('status');
+                const qrEl = document.getElementById('qr-container');
+                if (data.status === 'QR_READY' && data.qrCode) {
+                    statusEl.innerHTML = '<span class="tag ready">📷 Scan the QR code below</span>';
+                    if (qrInstance) { qrInstance.clear(); qrInstance.makeCode(data.qrCode); }
+                    else { qrInstance = new QRCode(qrEl, { text: data.qrCode, width: 220, height: 220 }); }
+                } else if (data.status === 'AUTHENTICATED') {
+                    qrEl.innerHTML = '<p style="font-size:3rem">✅</p>';
+                    statusEl.innerHTML = '<span class="tag connected">WhatsApp Connected!</span>';
+                } else if (data.status === 'INITIALIZING') {
+                    statusEl.innerHTML = '<span class="tag waiting">⏳ Initializing... please wait</span>';
+                } else {
+                    statusEl.innerHTML = '<span class="tag waiting">' + data.status + '</span>';
+                }
+            } catch(e) { console.error(e); }
+        }
+        pollStatus();
+        setInterval(pollStatus, 4000);
+    </script>
+</body>
+</html>`);
+});
+
 // --- WhatsApp Endpoints ---
 const socialManager = require('./services/socialManager');
 
