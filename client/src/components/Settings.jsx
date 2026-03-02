@@ -21,8 +21,8 @@ const Settings = () => {
     // Group definitions for UI
     const groups = {
         'Twitter': ['TWITTER_APP_KEY', 'TWITTER_APP_SECRET', 'TWITTER_ACCESS_TOKEN', 'TWITTER_ACCESS_SECRET'],
-        'Official Meta (FB/IG) API': ['FACEBOOK_PAGE_ACCESS_TOKEN', 'INSTAGRAM_ACCOUNT_ID'],
-        'Telegram': ['TELEGRAM_BOT_TOKEN'],
+        'Official Meta (FB/IG) API': ['FACEBOOK_PAGE_ACCESS_TOKEN', 'FACEBOOK_PAGE_ID', 'INSTAGRAM_ACCOUNT_ID'],
+        'Telegram': ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID'],
         'System / Bridge': ['PUBLIC_URL'],
         'WhatsApp Web (Groups)': []
     };
