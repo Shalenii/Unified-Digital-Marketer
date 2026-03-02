@@ -31,10 +31,13 @@ const Settings = () => {
         fetchSettings();
     }, []);
 
-    // Poll for WhatsApp QR Code — restart when settings load (to get PUBLIC_URL)
+    // Poll for WhatsApp QR Code — wait for PUBLIC_URL to load first
     useEffect(() => {
-        // Use PUBLIC_URL from settings as Railway base URL (most reliable)
         const RAILWAY_URL = settings.PUBLIC_URL || import.meta.env.VITE_API_URL || '';
+
+        // Don't fetch until we know the Railway URL
+        if (!RAILWAY_URL) return;
+
         let interval;
         const fetchQr = async () => {
             try {
@@ -53,7 +56,7 @@ const Settings = () => {
                 }
             } catch (error) {
                 console.error('Failed to fetch WhatsApp QR:', error);
-                setWhatsappFetchError(`Cannot reach Railway backend. Check VITE_API_URL. (${error.message})`);
+                setWhatsappFetchError(`Cannot reach Railway backend: ${error.message}`);
             }
         };
 
