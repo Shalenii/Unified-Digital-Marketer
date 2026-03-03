@@ -1,3 +1,5 @@
+const dns = require('dns');
+dns.setDefaultResultOrder('ipv4first');
 const express = require('express');
 const cors = require('cors');
 
@@ -113,18 +115,17 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
             const fileName = `${Date.now()}_${sanitizedName}`;
             const fs = require('fs');
 
-            if (process.env.VERCEL) {
-                // Production: Upload to Supabase Storage (Read-only filesystem)
+                        // ALWAYS upload to Supabase so external APIs can access it
+            try {
                 image_path = await uploadToSupabase(req.file.buffer, fileName, req.file.mimetype);
-            } else {
-                // Local: Save to uploads folder
-                const filePath = path.join(__dirname, 'uploads', fileName);
-                if (!fs.existsSync(path.join(__dirname, 'uploads'))) {
-                    fs.mkdirSync(path.join(__dirname, 'uploads'), { recursive: true });
-                }
-                fs.writeFileSync(filePath, req.file.buffer);
+            } catch (err) {
+                console.error('Supabase upload fail', err);
                 image_path = fileName;
             }
+            // save locally
+            const filePath = path.join(__dirname, 'uploads', fileName);
+            if (!fs.existsSync(path.join(__dirname, 'uploads'))) fs.mkdirSync(path.join(__dirname, 'uploads'), { recursive: true });
+            fs.writeFileSync(filePath, req.file.buffer);
         } else if (source_mode === 'Auto' && image_path) {
             // AUTO MODE FIX:
             // image_path from client is just "2026-02-11/image.jpg" (local server path)
@@ -139,14 +140,12 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
                 const ext = path.extname(localFilePath).toLowerCase();
                 const mimeType = ext === '.png' ? 'image/png' : 'image/jpeg';
 
-                if (process.env.VERCEL) {
+                                try {
                     image_path = await uploadToSupabase(fileBuffer, `${Date.now()}_auto_${path.basename(localFilePath)}`, mimeType);
-                } else {
-                    const fileName = `${Date.now()}_auto_${path.basename(localFilePath)}`;
-                    const newPath = path.join(__dirname, 'uploads', fileName);
-                    fs.writeFileSync(newPath, fileBuffer);
-                    image_path = fileName;
-                }
+                } catch(e) {}
+                const fileName = `${Date.now()}_auto_${path.basename(localFilePath)}`;
+                const newPath = path.join(__dirname, 'uploads', fileName);
+                fs.writeFileSync(newPath, fileBuffer);
             } else {
                 console.warn(`[Auto Mode] Local file not found: ${localFilePath}`);
                 // return res.status(400).json({ error: 'Source image not found on server' });

@@ -1,6 +1,0 @@
-Error: Instagram Official API failed: Error validating access token: Session has expired on Monday, 02-Mar-26 08:00:00 PST. The current time is Monday, 02-Mar-26 10:38:58 PST.
-Stack: Error: Instagram Official API failed: Error validating access token: Session has expired on Monday, 02-Mar-26 08:00:00 PST. The current time is Monday, 02-Mar-26 10:38:58 PST.
-    at publishToInstagram (C:\scheduler app\server\services\socialManager.js:279:15)
-    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
-    at async Object.publish (C:\scheduler app\server\services\socialManager.js:525:24)
-    at async runTest (C:\scheduler app\server\test_publish_91.js:39:24)

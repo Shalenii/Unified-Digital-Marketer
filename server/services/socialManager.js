@@ -1,3 +1,5 @@
+const dns = require('dns');
+dns.setDefaultResultOrder('ipv4first');
 const configService = require('./configService');
 const supabase = require('../supabaseClient');
 const axios = require('axios');
@@ -162,7 +164,7 @@ const publishToTwitter = async (caption, imageBuffer, imageType, publicImageUrl)
     let fetchBuffer = imageBuffer;
     if (!fetchBuffer && publicImageUrl) {
         console.log(`[Twitter] Downloading deferred buffer from ${publicImageUrl}...`);
-        const response = await axios.get(publicImageUrl, { responseType: 'arraybuffer', timeout: 15000 });
+        const response = await axios.get(publicImageUrl, { responseType: 'arraybuffer', timeout: 60000 });
         fetchBuffer = Buffer.from(response.data, 'binary');
     }
 
@@ -193,7 +195,7 @@ const publishToFacebook = async (caption, imageBuffer, publicImageUrl) => {
     let fetchBuffer = imageBuffer;
     if (!fetchBuffer && publicImageUrl) {
         console.log(`[Facebook] Downloading deferred buffer from ${publicImageUrl}...`);
-        const response = await axios.get(publicImageUrl, { responseType: 'arraybuffer', timeout: 15000 });
+        const response = await axios.get(publicImageUrl, { responseType: 'arraybuffer', timeout: 60000 });
         fetchBuffer = Buffer.from(response.data, 'binary');
     }
 
@@ -202,14 +204,14 @@ const publishToFacebook = async (caption, imageBuffer, publicImageUrl) => {
         form.append('message', caption);
         form.append('access_token', token);
         // FormData requires a filename for Buffers
-        form.append('source', imageBuffer, { filename: 'image.jpg' });
+        form.append('source', fetchBuffer || imageBuffer, { filename: 'image.jpg' });
 
         const response = await axios.post(
             `https://graph.facebook.com/${pageId}/photos`,
             form,
             {
                 headers: form.getHeaders(),
-                timeout: 15000 // 15s timeout
+                timeout: 60000 // 60s timeout
             }
         );
 
@@ -288,7 +290,7 @@ const publishToTelegram = async (caption, imageBuffer, post, publicImageUrl) => 
     let fetchBuffer = imageBuffer;
     if (!fetchBuffer && publicImageUrl) {
         console.log(`[Telegram] Downloading deferred buffer from ${publicImageUrl}...`);
-        const response = await axios.get(publicImageUrl, { responseType: 'arraybuffer', timeout: 15000 });
+        const response = await axios.get(publicImageUrl, { responseType: 'arraybuffer', timeout: 60000 });
         fetchBuffer = Buffer.from(response.data, 'binary');
     }
 
@@ -358,7 +360,7 @@ const publishToTelegram = async (caption, imageBuffer, post, publicImageUrl) => 
                     form,
                     {
                         headers: form.getHeaders(),
-                        timeout: 15000 // 15s timeout
+                        timeout: 60000 // 60s timeout
                     }
                 );
 
