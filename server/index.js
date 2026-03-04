@@ -115,7 +115,7 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
             const fileName = `${Date.now()}_${sanitizedName}`;
             const fs = require('fs');
 
-                        // ALWAYS upload to Supabase so external APIs can access it
+            // ALWAYS upload to Supabase so external APIs can access it
             try {
                 image_path = await uploadToSupabase(req.file.buffer, fileName, req.file.mimetype);
             } catch (err) {
@@ -140,9 +140,9 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
                 const ext = path.extname(localFilePath).toLowerCase();
                 const mimeType = ext === '.png' ? 'image/png' : 'image/jpeg';
 
-                                try {
+                try {
                     image_path = await uploadToSupabase(fileBuffer, `${Date.now()}_auto_${path.basename(localFilePath)}`, mimeType);
-                } catch(e) {}
+                } catch (e) { }
                 const fileName = `${Date.now()}_auto_${path.basename(localFilePath)}`;
                 const newPath = path.join(__dirname, 'uploads', fileName);
                 fs.writeFileSync(newPath, fileBuffer);
@@ -189,63 +189,44 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
         if (initialStatus === 'Processing') {
             const socialManager = require('./services/socialManager');
 
-            // RESPOND IMMEDIATELY - don't make user wait for Instagram's API
-            res.json({
-                message: 'Post received! Publishing in background...',
-                post: { ...post, status: 'Processing' }
-            });
+            // Use AWAIT instead of waitUntil so Vercel does not kill the process
+            const platformList = JSON.parse(platforms || '[]');
+            const results = [];
+            const errors = [];
 
-            // Use waitUntil so Vercel keeps process alive after response is sent
-            try {
-                const { waitUntil } = require('@vercel/functions');
-                waitUntil((async () => {
-                    const platformList = JSON.parse(platforms || '[]');
-                    const results = [];
-                    const errors = [];
+            // Run all platforms in PARALLEL
+            await Promise.all(platformList.map(async (p) => {
+                try {
+                    console.log(`[Publishing] Starting ${p} for post ${post.id}`);
+                    await socialManager.publish(p, post);
+                    results.push(p);
+                    console.log(`[Publishing] ${p} success for post ${post.id}`);
+                } catch (pubErr) {
+                    console.error(`[Publishing] ${p} FAILED:`, pubErr.message);
+                    errors.push(`${p}: ${pubErr.message}`);
+                }
+            }));
 
-                    // Run all platforms in PARALLEL to avoid Vercel timeouts (10s limit)
-                    await Promise.all(platformList.map(async (p) => {
-                        try {
-                            console.log(`[Background Publish] Starting ${p} for post ${post.id}`);
-                            await socialManager.publish(p, post);
-                            results.push(p);
-                            console.log(`[Background Publish] ${p} success for post ${post.id}`);
-                        } catch (pubErr) {
-                            console.error(`[Background Publish] ${p} FAILED:`, pubErr.message);
-                            errors.push(`${p}: ${pubErr.message}`);
-                        }
-                    }));
-
-                    // Determine final status
-                    if (errors.length === 0) {
-                        await supabase.from('posts').update({ status: 'Published', internal_notes: `Published to: ${results.join(', ')}` }).eq('id', post.id);
-                    } else if (results.length > 0) {
-                        await supabase.from('posts').update({
-                            status: 'Published',
-                            internal_notes: `Partial Success. OK: ${results.join(', ')} | ERR: ${errors.join('; ')}`
-                        }).eq('id', post.id);
-                    } else {
-                        await supabase.from('posts').update({
-                            status: 'Failed',
-                            internal_notes: `All platforms failed: ${errors.join('; ')}`
-                        }).eq('id', post.id);
-                    }
-                })());
-            } catch (e) {
-                // Fallback: waitUntil not available (local dev), just fire-and-forget
-                (async () => {
-                    try {
-                        const platformList = JSON.parse(platforms || '[]');
-                        for (const p of platformList) {
-                            await socialManager.publish(p, post);
-                        }
-                        await supabase.from('posts').update({ status: 'Published' }).eq('id', post.id);
-                    } catch (pubErr) {
-                        console.error('[Fallback Publish Error]:', pubErr.message);
-                        await supabase.from('posts').update({ status: 'Failed', internal_notes: pubErr.message }).eq('id', post.id);
-                    }
-                })();
+            // Determine final status
+            let finalStatus;
+            let finalNotes;
+            if (errors.length === 0) {
+                finalStatus = 'Published';
+                finalNotes = `Published to: ${results.join(', ')}`;
+            } else if (results.length > 0) {
+                finalStatus = 'Published';
+                finalNotes = `Partial Success. OK: ${results.join(', ')} | ERR: ${errors.join('; ')}`;
+            } else {
+                finalStatus = 'Failed';
+                finalNotes = `All platforms failed: ${errors.join('; ')}`;
             }
+
+            await supabase.from('posts').update({ status: finalStatus, internal_notes: finalNotes }).eq('id', post.id);
+
+            res.json({
+                message: errors.length === 0 ? 'Post published successfully!' : 'Post published with some errors.',
+                post: { ...post, status: finalStatus, internal_notes: finalNotes }
+            });
 
         } else {
             res.json({ message: 'Post scheduled successfully', post });
