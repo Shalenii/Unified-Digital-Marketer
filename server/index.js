@@ -122,10 +122,12 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
                 console.error('Supabase upload fail', err);
                 image_path = fileName;
             }
-            // save locally
-            const filePath = path.join(__dirname, 'uploads', fileName);
-            if (!fs.existsSync(path.join(__dirname, 'uploads'))) fs.mkdirSync(path.join(__dirname, 'uploads'), { recursive: true });
-            fs.writeFileSync(filePath, req.file.buffer);
+            // save locally ONLY if not on Vercel
+            if (!process.env.VERCEL) {
+                const filePath = path.join(__dirname, 'uploads', fileName);
+                if (!fs.existsSync(path.join(__dirname, 'uploads'))) fs.mkdirSync(path.join(__dirname, 'uploads'), { recursive: true });
+                fs.writeFileSync(filePath, req.file.buffer);
+            }
         } else if (source_mode === 'Auto' && image_path) {
             // AUTO MODE FIX:
             // image_path from client is just "2026-02-11/image.jpg" (local server path)
@@ -144,8 +146,13 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
                     image_path = await uploadToSupabase(fileBuffer, `${Date.now()}_auto_${path.basename(localFilePath)}`, mimeType);
                 } catch (e) { }
                 const fileName = `${Date.now()}_auto_${path.basename(localFilePath)}`;
-                const newPath = path.join(__dirname, 'uploads', fileName);
-                fs.writeFileSync(newPath, fileBuffer);
+
+                // Save locally ONLY if not on Vercel
+                if (!process.env.VERCEL) {
+                    const newPath = path.join(__dirname, 'uploads', fileName);
+                    if (!fs.existsSync(path.join(__dirname, 'uploads'))) fs.mkdirSync(path.join(__dirname, 'uploads'), { recursive: true });
+                    fs.writeFileSync(newPath, fileBuffer);
+                }
             } else {
                 console.warn(`[Auto Mode] Local file not found: ${localFilePath}`);
                 // return res.status(400).json({ error: 'Source image not found on server' });
