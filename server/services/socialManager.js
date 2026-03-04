@@ -4,7 +4,6 @@ const configService = require('./configService');
 const supabase = require('../supabaseClient');
 const axios = require('axios');
 const FormData = require('form-data');
-const { Jimp } = require('jimp');
 const { TwitterApi } = require('twitter-api-v2');
 // WhatsApp dependencies will be lazy-loaded in initializeWhatsApp
 
@@ -281,10 +280,24 @@ const publishToFacebook = async (caption, imageBuffer, publicImageUrl) => {
     }
 };
 
-// --- Instagram Helper: Fix Aspect Ratio ---
 const ensureInstagramCompliance = async (publicImageUrl) => {
     try {
         console.log(`[Instagram Compliance] Checking image: ${publicImageUrl}`);
+
+        let Jimp;
+        try {
+            const jimpPkg = require('jimp');
+            Jimp = jimpPkg.Jimp || jimpPkg;
+        } catch (jimpLoadErr) {
+            console.warn('[Instagram Compliance] Jimp library not available, skipping resize.');
+            return publicImageUrl;
+        }
+
+        if (!Jimp || typeof Jimp.read !== 'function') {
+            console.warn('[Instagram Compliance] Jimp.read not found, skipping resize.');
+            return publicImageUrl;
+        }
+
         const image = await Jimp.read(publicImageUrl);
         const width = image.bitmap.width;
         const height = image.bitmap.height;
