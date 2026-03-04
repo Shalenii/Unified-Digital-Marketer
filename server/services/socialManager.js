@@ -128,24 +128,21 @@ const downloadImage = async (imagePath) => {
     // If it's already a full URL (from Supabase or elsewhere), handle it
     if (imagePath && (imagePath.startsWith('http://') || imagePath.startsWith('https://'))) {
         console.log(`[Storage] Using direct URL: ${imagePath}`);
-        return {
-            buffer: null, // Defer loading
-            url: imagePath,
-            isRemote: true
-        };
+        const _filename = path.basename(imagePath.split('?')[0]);
+        const ext = path.extname(_filename).toLowerCase();
+        const contentType = ext === '.png' ? 'image/png' : 'image/jpeg';
+        return { buffer: null, url: imagePath, contentType, isRemote: true };
     }
 
     const _filename = path.basename(imagePath || '');
+    const ext = path.extname(_filename).toLowerCase();
+    const contentType = ext === '.png' ? 'image/png' : 'image/jpeg';
 
     // VERCEL PREFERENCE: Always prefer Supabase Public URL if on Vercel
     if (isVercel || process.env.NODE_ENV === 'production') {
         console.log(`[Storage] Production/Vercel: Using Supabase Public URL for ${_filename}`);
         const { data: { publicUrl } } = supabase.storage.from('posts').getPublicUrl(_filename);
-        return {
-            buffer: null,
-            url: publicUrl,
-            isRemote: true
-        };
+        return { buffer: null, url: publicUrl, contentType, isRemote: true };
     }
 
     let baseUrl = configService.get('PUBLIC_URL') || 'http://localhost:3001';
@@ -156,15 +153,13 @@ const downloadImage = async (imagePath) => {
         const localFilePath = path.join(__dirname, '..', 'uploads', _filename);
         if (fs.existsSync(localFilePath)) {
             const buffer = fs.readFileSync(localFilePath);
-            const ext = path.extname(_filename).toLowerCase();
-            const contentType = ext === '.png' ? 'image/png' : 'image/jpeg';
             return { buffer, contentType, url: publicUrl, isRemote: false };
         }
         throw new Error(`Local file not found: ${localFilePath}`);
     } catch (err) {
         console.warn(`[Storage] Local fetch failed, falling back to Supabase: ${err.message}`);
         const { data: { publicUrl: fallbackUrl } } = supabase.storage.from('posts').getPublicUrl(_filename);
-        return { buffer: null, url: fallbackUrl, isRemote: true };
+        return { buffer: null, url: fallbackUrl, contentType, isRemote: true };
     }
 };
 
@@ -172,6 +167,8 @@ const publish = async (platform, post) => {
     try {
         // 1. Fetch Image info
         const { buffer, contentType, url } = await downloadImage(post.image_path);
+
+        if (!url) throw new Error(`Could not resolve image URL for ${platform}`);
 
         // 2. Extract Platform-Specific Caption Override
         let finalCaption = post.caption;
@@ -292,24 +289,21 @@ const publishToInstagram = async (caption, publicImageUrl) => {
     }
 
     console.log(`[Instagram Graph API] Preparing to publish to Account ID: ${igAccountId}...`);
-    console.log(`[Instagram Graph API] Image URL for Meta Servers: ${publicImageUrl}`);
+    // Add a dummy query param to help Meta detect the file type
+    const finalImageUrl = publicImageUrl.includes('?') ? `${publicImageUrl}&type=.jpg` : `${publicImageUrl}?type=.jpg`;
+    console.log(`[Instagram Graph API] Final Image URL: ${finalImageUrl}`);
 
     try {
-
         // Step 1: Create a Media Container
-        // Add a dummy query param to the URL to force Meta to recognize it as an image file
-        // Sometimes localtunnel/ngrok headers obscure the content type, so Meta rejects it without a clear extension
-        const finalImageUrl = publicImageUrl.includes('?') ? `${publicImageUrl}&type=.jpg` : `${publicImageUrl}?type=.jpg`;
-
+        // Use the body for POST parameters as per modern Meta Graph API standards
         const containerRes = await axios.post(
             `https://graph.facebook.com/v19.0/${igAccountId}/media`,
-            '',
             {
-                params: {
-                    image_url: finalImageUrl,
-                    caption: caption,
-                    access_token: token
-                },
+                image_url: finalImageUrl,
+                caption: caption,
+                access_token: token
+            },
+            {
                 timeout: 30000 // 30s timeout
             }
         );
@@ -320,12 +314,11 @@ const publishToInstagram = async (caption, publicImageUrl) => {
         // Step 2: Publish the Container
         const publishRes = await axios.post(
             `https://graph.facebook.com/v19.0/${igAccountId}/media_publish`,
-            '',
             {
-                params: {
-                    creation_id: creationId,
-                    access_token: token
-                },
+                creation_id: creationId,
+                access_token: token
+            },
+            {
                 timeout: 30000 // 30s timeout
             }
         );
