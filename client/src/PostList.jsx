@@ -16,23 +16,37 @@ const getImageUrl = (path) => {
 
 function PostList({ refreshTrigger }) {
     const [posts, setPosts] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
     const [viewMode, setViewMode] = useState('list'); // 'list' or 'calendar'
     const [reschedulePost, setReschedulePost] = useState(null);
 
-    const fetchPosts = async () => {
+    const fetchPosts = async (isInitial = false) => {
+        if (isInitial) setLoading(true);
         try {
             const response = await fetch(`/api/posts?t=${Date.now()}`);
+            if (!response.ok) throw new Error(`Server returned ${response.status}`);
             const data = await response.json();
-            setPosts(data.posts);
+
+            if (data && Array.isArray(data.posts)) {
+                setPosts(data.posts);
+                setError(null);
+            } else {
+                console.error('Invalid data format from API:', data);
+                if (isInitial) setPosts([]);
+            }
         } catch (error) {
             console.error('Failed to fetch posts:', error);
+            setError(error.message);
+        } finally {
+            if (isInitial) setLoading(false);
         }
     };
 
     useEffect(() => {
-        fetchPosts();
+        fetchPosts(true);
         // Poll every 10 seconds to check for status updates
-        const interval = setInterval(fetchPosts, 10000);
+        const interval = setInterval(() => fetchPosts(false), 10000);
         return () => clearInterval(interval);
     }, [refreshTrigger]);
 
@@ -94,14 +108,24 @@ function PostList({ refreshTrigger }) {
                 </div>
             </div>
 
-            {viewMode === 'calendar' ? (
+            {loading ? (
+                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                    <div className="spinner"></div>
+                    <p>Loading your history...</p>
+                </div>
+            ) : error ? (
+                <div style={{ padding: '2rem', textAlign: 'center', color: '#ff4d4d', background: 'rgba(255,77,77,0.1)', borderRadius: '8px' }}>
+                    <p>⚠️ Error: {error}</p>
+                    <button onClick={() => fetchPosts(true)} className="nav-btn" style={{ marginTop: '1rem' }}>Retry</button>
+                </div>
+            ) : viewMode === 'calendar' ? (
                 <CalendarView posts={posts} />
             ) : (
                 <div className="post-list">
-                    {posts.length === 0 && <p style={{ color: 'var(--text-muted)' }}>No posts found.</p>}
-                    {posts.map(post => (
-                        <div key={post.id} className="post-item">
-                            {post.image_path ? (
+                    {(!posts || posts.length === 0) && <p style={{ color: 'var(--text-muted)' }}>No posts found.</p>}
+                    {(posts || []).map(post => (
+                        <div key={post?.id} className="post-item">
+                            {post?.image_path ? (
                                 <img
                                     src={getImageUrl(post.image_path)}
                                     alt="Post" className="post-thumb"
@@ -115,21 +139,21 @@ function PostList({ refreshTrigger }) {
 
                             <div className="post-info">
                                 <div className="post-meta">
-                                    <span>{new Date(post.scheduled_time).toLocaleString()}</span>
-                                    {post.is_recurring === true && (
+                                    <span>{post?.scheduled_time ? new Date(post.scheduled_time).toLocaleString() : 'No time set'}</span>
+                                    {post?.is_recurring === true && (
                                         <span className="recurrence-badge">
                                             🔄 {post.recurrence_frequency?.toUpperCase()}
                                         </span>
                                     )}
                                 </div>
-                                <div className="post-caption">{post.caption.split('\n')[0]}</div>
+                                <div className="post-caption">{post?.caption ? post.caption.split('\n')[0] : 'No caption'}</div>
                                 <div className="post-meta">
-                                    <span>To: {JSON.parse(post.platforms || '[]').join(', ')}</span>
+                                    <span>To: {JSON.parse(post?.platforms || '[]').join(', ')}</span>
                                 </div>
                             </div>
 
                             <div className="post-actions" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                                <span className={`status-badge status-${post.status}`}>{post.status}</span>
+                                <span className={`status-badge status-${post?.status || 'Unknown'}`}>{post?.status || 'Unknown'}</span>
                                 <PostOptionsDropdown post={post} onAction={handleAction} />
                             </div>
                         </div>
@@ -141,7 +165,7 @@ function PostList({ refreshTrigger }) {
                 <RescheduleModal
                     post={reschedulePost}
                     onClose={() => setReschedulePost(null)}
-                    onSuccess={fetchPosts}
+                    onSuccess={() => fetchPosts(false)}
                 />
             )}
         </div>

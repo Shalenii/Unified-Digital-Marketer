@@ -30,7 +30,8 @@ const CalendarView = ({ posts }) => {
 
     // Group posts by day
     const postsByDay = {};
-    posts.forEach(post => {
+    (posts || []).forEach(post => {
+        if (!post?.scheduled_time) return;
         const d = new Date(post.scheduled_time);
         if (d.getFullYear() === year && d.getMonth() === month) {
             const day = d.getDate();
