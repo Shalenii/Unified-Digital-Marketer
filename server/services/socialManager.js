@@ -128,12 +128,22 @@ const downloadImage = async (imagePath) => {
     // If it's already a full URL (from Supabase or elsewhere), handle it
     if (imagePath && (imagePath.startsWith('http://') || imagePath.startsWith('https://'))) {
         console.log(`[Storage] Using direct URL: ${imagePath}`);
-        // We defer the buffer download here to avoid 504 timeouts on Vercel when publishing to Instagram
-        // Instagram only needs the URL string, it does NOT need the buffer. Downloading a 5MB image into memory
-        // inside a Serverless function kills Vercel's free tier time allotment.
         return {
             buffer: null, // Defer loading
             url: imagePath,
+            isRemote: true
+        };
+    }
+
+    const _filename = path.basename(imagePath || '');
+
+    // VERCEL PREFERENCE: Always prefer Supabase Public URL if on Vercel
+    if (isVercel || process.env.NODE_ENV === 'production') {
+        console.log(`[Storage] Production/Vercel: Using Supabase Public URL for ${_filename}`);
+        const { data: { publicUrl } } = supabase.storage.from('posts').getPublicUrl(_filename);
+        return {
+            buffer: null,
+            url: publicUrl,
             isRemote: true
         };
     }
@@ -143,32 +153,70 @@ const downloadImage = async (imagePath) => {
     const publicUrl = `${baseUrl}/uploads/${encodeURIComponent(imagePath)}`;
 
     try {
-        const _filename = path.basename(imagePath);
-
-        // VERCEL FALLBACK: If on Vercel and it's just a filename, try to get from Supabase
-        if (isVercel) {
-            console.log(`[Storage] Vercel environment detected. Attempting Supabase fallback for: ${_filename}`);
-            const { data: { publicUrl } } = supabase.storage.from('posts').getPublicUrl(_filename);
-            return {
-                buffer: null,
-                url: publicUrl,
-                isRemote: true
-            };
-        }
-
         const localFilePath = path.join(__dirname, '..', 'uploads', _filename);
-        if (!fs.existsSync(localFilePath)) throw new Error(`File not found: ${localFilePath}`);
-        const buffer = fs.readFileSync(localFilePath);
-        return {
-            buffer,
-            contentType: path.extname(_filename).toLowerCase() === '.png' ? 'image/png' : 'image/jpeg',
-            url: publicUrl
-        };
-    } catch (error) {
-        throw new Error(`Failed to load image: ${error.message}`);
+        if (fs.existsSync(localFilePath)) {
+            const buffer = fs.readFileSync(localFilePath);
+            const ext = path.extname(_filename).toLowerCase();
+            const contentType = ext === '.png' ? 'image/png' : 'image/jpeg';
+            return { buffer, contentType, url: publicUrl, isRemote: false };
+        }
+        throw new Error(`Local file not found: ${localFilePath}`);
+    } catch (err) {
+        console.warn(`[Storage] Local fetch failed, falling back to Supabase: ${err.message}`);
+        const { data: { publicUrl: fallbackUrl } } = supabase.storage.from('posts').getPublicUrl(_filename);
+        return { buffer: null, url: fallbackUrl, isRemote: true };
     }
 };
 
+const publish = async (platform, post) => {
+    try {
+        // 1. Fetch Image info
+        const { buffer, contentType, url } = await downloadImage(post.image_path);
+
+        // 2. Extract Platform-Specific Caption Override
+        let finalCaption = post.caption;
+        try {
+            const settings = typeof post.platform_settings === 'string'
+                ? JSON.parse(post.platform_settings)
+                : (post.platform_settings || {});
+
+            // Check for specific platform override, e.g., settings.Instagram.caption
+            if (settings[platform] && settings[platform].caption) {
+                console.log(`[Publishing] Using caption override for ${platform}`);
+                finalCaption = settings[platform].caption;
+            }
+        } catch (e) {
+            console.warn(`[Publishing] Failed to parse platform_settings for ${platform} caption override.`);
+        }
+
+        // 3. Platform Switch
+        switch (platform.toLowerCase()) {
+            case 'twitter':
+                return await publishToTwitter(finalCaption, buffer, contentType, url);
+            case 'facebook':
+                return await publishToFacebook(finalCaption, buffer, url);
+            case 'instagram':
+                return await publishToInstagram(finalCaption, url);
+            case 'whatsapp':
+                return await publishToWhatsApp(finalCaption, buffer, contentType, post.image_path, post, url);
+            case 'telegram':
+                return await publishToTelegram(finalCaption, buffer, post, url);
+            default:
+                throw new Error(`Platform ${platform} not supported`);
+        }
+    } catch (error) {
+        // Mock Success fallback for development/demo if Config is missing
+        const isCredentialError = error.message.includes('credentials not found') || error.message.includes('Missing Instagram');
+
+        if (isCredentialError) {
+            console.log(`[MOCK PUBLISH] Platform: ${platform}, Caption: "${post.caption}"`);
+            console.log(`(Real publishing skipped. Error: ${error.message})`);
+            return { success: true, platform, id: 'mock-id-' + Date.now(), mocked: true };
+        }
+
+        throw error;
+    }
+};
 
 
 const publishToTwitter = async (caption, imageBuffer, imageType, publicImageUrl) => {
@@ -369,7 +417,7 @@ const publishToTelegram = async (caption, imageBuffer, post, publicImageUrl) => 
                 const form = new FormData();
                 form.append('chat_id', currentChatId);
                 form.append('caption', caption);
-                form.append('photo', imageBuffer, { filename: 'image.jpg' });
+                form.append('photo', fetchBuffer, { filename: 'image.jpg' });
 
                 const response = await axios.post(
                     `https://api.telegram.org/bot${botToken}/sendPhoto`,
@@ -444,7 +492,7 @@ const publishToTelegram = async (caption, imageBuffer, post, publicImageUrl) => 
     };
 };
 
-const publishToWhatsApp = async (caption, imageBuffer, contentType, originalFilename, post) => {
+const publishToWhatsApp = async (caption, imageBuffer, contentType, originalFilename, post, publicImageUrl) => {
     const accessToken = configService.get('WHATSAPP_ACCESS_TOKEN');
     const phoneNumberId = configService.get('WHATSAPP_PHONE_NUMBER_ID');
 
@@ -479,10 +527,17 @@ const publishToWhatsApp = async (caption, imageBuffer, contentType, originalFile
         throw new Error('No WhatsApp phone numbers specified. Add numbers in post settings or set WHATSAPP_TO_PHONE in env.');
     }
 
+    let fetchBuffer = imageBuffer;
+    if (!fetchBuffer && publicImageUrl) {
+        console.log(`[WhatsApp] Downloading deferred buffer from ${publicImageUrl}...`);
+        const response = await axios.get(publicImageUrl, { responseType: 'arraybuffer', timeout: 30000 });
+        fetchBuffer = Buffer.from(response.data, 'binary');
+    }
+
     // Step 1: Upload the image to Meta's media endpoint to get a media ID
     console.log(`[WhatsApp Cloud API] Uploading image for media ID...`);
     const uploadForm = new FormData();
-    uploadForm.append('file', imageBuffer, { filename: originalFilename || 'image.jpg', contentType });
+    uploadForm.append('file', fetchBuffer, { filename: originalFilename || 'image.jpg', contentType });
     uploadForm.append('messaging_product', 'whatsapp');
     uploadForm.append('type', contentType);
 
@@ -527,41 +582,7 @@ const publishToWhatsApp = async (caption, imageBuffer, contentType, originalFile
     return { success: true, platform: 'WhatsApp', id: mediaId, partialErrors: errors.length > 0 ? errors : undefined };
 };
 
-const publish = async (platform, post) => {
-    try {
-        // Fetch Image from Supabase
-        // post.image_path is just the filename now (e.g., "172...jpg")
-        const { buffer, contentType, url } = await downloadImage(post.image_path);
 
-        switch (platform.toLowerCase()) {
-            case 'twitter':
-                return await publishToTwitter(post.caption, buffer, contentType, url);
-            case 'facebook':
-                return await publishToFacebook(post.caption, buffer, url);
-            case 'instagram':
-                // Instgram needs URL, not buffer
-                return await publishToInstagram(post.caption, url);
-            case 'whatsapp':
-                // WhatsApp-web.js needs buffer
-                return await publishToWhatsApp(post.caption, buffer, contentType, post.image_path, post);
-            case 'telegram':
-                return await publishToTelegram(post.caption, buffer, post, url);
-            default:
-                throw new Error(`Platform ${platform} not supported`);
-        }
-    } catch (error) {
-        // Mock Success fallback for development/demo if Config is missing
-        const isCredentialError = error.message.includes('credentials not found') || error.message.includes('Missing Instagram');
-
-        if (isCredentialError) {
-            console.log(`[MOCK PUBLISH] Platform: ${platform}, Caption: "${post.caption}"`);
-            console.log(`(Real publishing skipped. Error: ${error.message})`);
-            return { success: true, platform, id: 'mock-id-' + Date.now(), mocked: true };
-        }
-
-        throw error;
-    }
-};
 
 // --- New WhatsApp Helper Functions for UI ---
 const getWhatsAppStatus = () => {

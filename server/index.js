@@ -99,7 +99,17 @@ app.get('/api/posts', async (req, res) => {
         .order('id', { ascending: false });
 
     if (error) return res.status(500).json({ error: error.message });
-    res.json({ posts: data });
+
+    // Ensure image_path is always a full URL for the frontend
+    const postsWithFullUrls = data.map(post => {
+        if (post.image_path && !post.image_path.startsWith('http')) {
+            const { data: { publicUrl } } = supabase.storage.from('posts').getPublicUrl(post.image_path);
+            return { ...post, image_path: publicUrl };
+        }
+        return post;
+    });
+
+    res.json({ posts: postsWithFullUrls });
 });
 
 // POST /api/posts - Create a new post/schedule

@@ -4,8 +4,9 @@ import PostOptionsDropdown from './components/PostOptionsDropdown';
 import RescheduleModal from './components/RescheduleModal';
 
 // START: App Configuration
-// In production (Vercel), VITE_API_URL points to Railway backend. Locally, use localhost:3001.
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+// In production (Vercel), we use relative paths. Locally, use localhost:3001.
+const isProd = import.meta.env.PROD;
+const API_BASE_URL = isProd ? '' : (import.meta.env.VITE_API_URL || 'http://localhost:3001');
 
 const safeJSONParse = (input, fallback = []) => {
     if (!input) return fallback;
