@@ -1,0 +1,5 @@
+server/uploads/
+server/whatsapp-session/
+.env
+.idea/
+.git/
