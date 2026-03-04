@@ -61,10 +61,6 @@ const handleCron = async (req, res) => {
 app.get('/api/cron', handleCron);
 app.get('/cron', handleCron); // Fallback if /api is stripped
 
-app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', time: new Date().toISOString(), isVercel });
-});
-
 
 
 // Configure Multer to use Memory Storage (Serverless friendly)
@@ -108,7 +104,6 @@ app.get('/api/posts', async (req, res) => {
 
 // POST /api/posts - Create a new post/schedule
 app.post('/api/posts', upload.single('image'), async (req, res) => {
-    console.log('[DEBUG] POST /api/posts hit. Body keys:', Object.keys(req.body));
     try {
         const {
             caption, hashtags, internal_notes, platforms, platform_settings,
@@ -120,7 +115,6 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
 
         // Handle File Upload
         if (req.file) {
-            console.log('[DEBUG] File received:', req.file.originalname);
             // Sanitize filename: remove spaces and special characters
             const sanitizedName = req.file.originalname.replace(/[^a-zA-Z0-9.]/g, '_');
             const fileName = `${Date.now()}_${sanitizedName}`;
@@ -187,7 +181,6 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
 
         // Status is 'Processing' if immediate, else 'Pending'
         const initialStatus = (is_immediate === 'true' || is_immediate === true) ? 'Processing' : 'Pending';
-        console.log(`[DEBUG] Initial Status: ${initialStatus}. Inserting into DB...`);
 
         const { data, error } = await supabase
             .from('posts')
@@ -215,46 +208,56 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
         // If immediate, trigger publishing logic NOW
         if (initialStatus === 'Processing') {
             const socialManager = require('./services/socialManager');
-
-            // Use AWAIT instead of waitUntil so Vercel does not kill the process
             const platformList = JSON.parse(platforms || '[]');
             const results = [];
             const errors = [];
 
-            // Run all platforms in PARALLEL
-            await Promise.all(platformList.map(async (p) => {
-                try {
-                    console.log(`[Publishing] Starting ${p} for post ${post.id}`);
-                    await socialManager.publish(p, post);
-                    results.push(p);
-                    console.log(`[Publishing] ${p} success for post ${post.id}`);
-                } catch (pubErr) {
-                    console.error(`[Publishing] ${p} FAILED:`, pubErr.message);
-                    errors.push(`${p}: ${pubErr.message}`);
+            try {
+                // Run all platforms in PARALLEL
+                await Promise.all(platformList.map(async (p) => {
+                    try {
+                        console.log(`[Publishing] Starting ${p} for post ${post.id}`);
+                        await socialManager.publish(p, post);
+                        results.push(p);
+                        console.log(`[Publishing] ${p} success for post ${post.id}`);
+                    } catch (pubErr) {
+                        console.error(`[Publishing] ${p} FAILED:`, pubErr.message);
+                        errors.push(`${p}: ${pubErr.message}`);
+                    }
+                }));
+
+                // Determine final status
+                let finalStatus;
+                let finalNotes;
+                if (errors.length === 0) {
+                    finalStatus = 'Published';
+                    finalNotes = `Published to: ${results.join(', ')}`;
+                } else if (results.length > 0) {
+                    finalStatus = 'Published';
+                    finalNotes = `Partial Success. OK: ${results.join(', ')} | ERR: ${errors.join('; ')}`;
+                } else {
+                    finalStatus = 'Failed';
+                    finalNotes = `All platforms failed: ${errors.join('; ')}`;
                 }
-            }));
 
-            // Determine final status
-            let finalStatus;
-            let finalNotes;
-            if (errors.length === 0) {
-                finalStatus = 'Published';
-                finalNotes = `Published to: ${results.join(', ')}`;
-            } else if (results.length > 0) {
-                finalStatus = 'Published';
-                finalNotes = `Partial Success. OK: ${results.join(', ')} | ERR: ${errors.join('; ')}`;
-            } else {
-                finalStatus = 'Failed';
-                finalNotes = `All platforms failed: ${errors.join('; ')}`;
+                await supabase.from('posts').update({ status: finalStatus, internal_notes: finalNotes }).eq('id', post.id);
+
+                res.json({
+                    message: errors.length === 0 ? 'Post published successfully!' : 'Post published with some errors.',
+                    post: { ...post, status: finalStatus, internal_notes: finalNotes }
+                });
+            } catch (publishSystemError) {
+                console.error('[CRITICAL] Publishing system crashed:', publishSystemError);
+                await supabase.from('posts').update({
+                    status: 'Failed',
+                    internal_notes: `System Error: ${publishSystemError.message || publishSystemError}`
+                }).eq('id', post.id);
+
+                res.status(500).json({
+                    error: 'Publishing failed due to internal error',
+                    detail: publishSystemError.message
+                });
             }
-
-            await supabase.from('posts').update({ status: finalStatus, internal_notes: finalNotes }).eq('id', post.id);
-
-            res.json({
-                message: errors.length === 0 ? 'Post published successfully!' : 'Post published with some errors.',
-                post: { ...post, status: finalStatus, internal_notes: finalNotes }
-            });
-
         } else {
             res.json({ message: 'Post scheduled successfully', post });
         }
