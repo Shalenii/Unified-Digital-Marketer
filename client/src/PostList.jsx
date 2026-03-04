@@ -7,6 +7,20 @@ import RescheduleModal from './components/RescheduleModal';
 // In production (Vercel), VITE_API_URL points to Railway backend. Locally, use localhost:3001.
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
+const safeJSONParse = (input, fallback = []) => {
+    if (!input) return fallback;
+    if (typeof input !== 'string') return input;
+    try {
+        const parsed = JSON.parse(input);
+        // If it's still a string (double encoded), try one more parse
+        if (typeof parsed === 'string') return JSON.parse(parsed);
+        return parsed;
+    } catch (e) {
+        console.warn('[PostList] JSON Parse failed:', e.message, 'Input:', input);
+        return fallback;
+    }
+};
+
 const getImageUrl = (path) => {
     if (!path) return '';
     if (path.startsWith('http')) return path; // Already a URL
@@ -148,7 +162,7 @@ function PostList({ refreshTrigger }) {
                                 </div>
                                 <div className="post-caption">{post?.caption ? post.caption.split('\n')[0] : 'No caption'}</div>
                                 <div className="post-meta">
-                                    <span>To: {JSON.parse(post?.platforms || '[]').join(', ')}</span>
+                                    <span>To: {safeJSONParse(post?.platforms).join(', ')}</span>
                                 </div>
                             </div>
 
