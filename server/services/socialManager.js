@@ -4,6 +4,7 @@ const configService = require('./configService');
 const supabase = require('../supabaseClient');
 const axios = require('axios');
 const FormData = require('form-data');
+const { Jimp } = require('jimp');
 const { TwitterApi } = require('twitter-api-v2');
 // WhatsApp dependencies will be lazy-loaded in initializeWhatsApp
 
@@ -280,6 +281,59 @@ const publishToFacebook = async (caption, imageBuffer, publicImageUrl) => {
     }
 };
 
+// --- Instagram Helper: Fix Aspect Ratio ---
+const ensureInstagramCompliance = async (publicImageUrl) => {
+    try {
+        console.log(`[Instagram Compliance] Checking image: ${publicImageUrl}`);
+        const image = await Jimp.read(publicImageUrl);
+        const width = image.bitmap.width;
+        const height = image.bitmap.height;
+        const ratio = width / height;
+
+        // Instagram requirements: 0.8 (4:5) to 1.91 (1.91:1)
+        if (ratio >= 0.8 && ratio <= 1.91) {
+            console.log(`[Instagram Compliance] Image ratio ${ratio.toFixed(2)} is already compliant.`);
+            return publicImageUrl;
+        }
+
+        console.log(`[Instagram Compliance] Ratio ${ratio.toFixed(2)} is non-compliant. Padding image...`);
+
+        let targetWidth = width;
+        let targetHeight = height;
+
+        if (ratio < 0.8) {
+            // Too tall: increase width to reach 0.8
+            targetWidth = Math.ceil(height * 0.8);
+        } else {
+            // Too wide: increase height to reach 1/1.91
+            targetHeight = Math.ceil(width / 1.91);
+        }
+
+        const canvas = new Jimp({ width: targetWidth, height: targetHeight, color: 0xFFFFFFFF });
+        const x = Math.floor((targetWidth - width) / 2);
+        const y = Math.floor((targetHeight - height) / 2);
+
+        canvas.composite(image, x, y);
+        const buffer = await canvas.getBuffer('image/jpeg');
+
+        // Upload the fixed version to Supabase
+        const fileName = `processed_${Date.now()}_instagram.jpg`;
+        const { data, error } = await supabase.storage.from('posts').upload(fileName, buffer, {
+            contentType: 'image/jpeg',
+            upsert: true
+        });
+
+        if (error) throw error;
+
+        const { data: { publicUrl } } = supabase.storage.from('posts').getPublicUrl(fileName);
+        console.log(`[Instagram Compliance] New compliant image URL: ${publicUrl}`);
+        return publicUrl;
+    } catch (err) {
+        console.error('[Instagram Compliance] Failed to process image:', err.message);
+        return publicImageUrl; // Fallback to original
+    }
+};
+
 const publishToInstagram = async (caption, publicImageUrl) => {
     const token = configService.get('FACEBOOK_PAGE_ACCESS_TOKEN');
     const igAccountId = configService.get('INSTAGRAM_ACCOUNT_ID');
@@ -288,9 +342,12 @@ const publishToInstagram = async (caption, publicImageUrl) => {
         throw new Error('Missing FACEBOOK_PAGE_ACCESS_TOKEN or INSTAGRAM_ACCOUNT_ID in .env or settings');
     }
 
+    // Ensure compliance only for Instagram
+    const compliantUrl = await ensureInstagramCompliance(publicImageUrl);
+
     console.log(`[Instagram Graph API] Preparing to publish to Account ID: ${igAccountId}...`);
     // Add a dummy query param to help Meta detect the file type
-    const finalImageUrl = publicImageUrl.includes('?') ? `${publicImageUrl}&type=.jpg` : `${publicImageUrl}?type=.jpg`;
+    const finalImageUrl = compliantUrl.includes('?') ? `${compliantUrl}&type=.jpg` : `${compliantUrl}?type=.jpg`;
     console.log(`[Instagram Graph API] Final Image URL: ${finalImageUrl}`);
 
     try {
