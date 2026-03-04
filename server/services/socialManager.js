@@ -121,6 +121,8 @@ const getTwitterClient = () => {
 const fs = require('fs');
 const path = require('path');
 
+const isVercel = process.env.VERCEL === '1' || !!process.env.VERCEL;
+
 // Helper: Download Image from local storage (or Supabase fallback)
 const downloadImage = async (imagePath) => {
     // If it's already a full URL (from Supabase or elsewhere), handle it
@@ -142,6 +144,18 @@ const downloadImage = async (imagePath) => {
 
     try {
         const _filename = path.basename(imagePath);
+
+        // VERCEL FALLBACK: If on Vercel and it's just a filename, try to get from Supabase
+        if (isVercel) {
+            console.log(`[Storage] Vercel environment detected. Attempting Supabase fallback for: ${_filename}`);
+            const { data: { publicUrl } } = supabase.storage.from('posts').getPublicUrl(_filename);
+            return {
+                buffer: null,
+                url: publicUrl,
+                isRemote: true
+            };
+        }
+
         const localFilePath = path.join(__dirname, '..', 'uploads', _filename);
         if (!fs.existsSync(localFilePath)) throw new Error(`File not found: ${localFilePath}`);
         const buffer = fs.readFileSync(localFilePath);
@@ -614,13 +628,16 @@ const disconnectWhatsApp = async () => {
     authStatus = 'INITIALIZING';
 
     // Completely wipe the unneeded session folder to force a clean re-auth
-    try {
-        const fs = require('fs');
-        if (fs.existsSync('./whatsapp-session')) {
-            fs.rmSync('./whatsapp-session', { recursive: true, force: true });
+    // Skip on Vercel as it doesn't support local session folders anyway
+    if (!isVercel) {
+        try {
+            const fs = require('fs');
+            if (fs.existsSync('./whatsapp-session')) {
+                fs.rmSync('./whatsapp-session', { recursive: true, force: true });
+            }
+        } catch (e) {
+            console.error("Failed to delete whatsapp-session folder:", e);
         }
-    } catch (e) {
-        console.error("Failed to delete whatsapp-session folder:", e);
     }
 
     // Give it a second, then reinitialize

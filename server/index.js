@@ -17,6 +17,8 @@ const { startCron, runCronJob } = require('./cron'); // Renamed to startCron for
 const supabase = require('./supabaseClient');
 const configService = require('./services/configService');
 
+const isVercel = process.env.VERCEL === '1' || !!process.env.VERCEL;
+
 // Initialize settings
 configService.loadSettings().catch(err => console.error('Failed to load settings:', err));
 
@@ -32,7 +34,10 @@ app.use(cors({
 app.use(express.json());
 
 // Serve local uploads publicly (Required for Instagram fetch via tunnel)
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Skip if on Vercel as the directory won't exist or be writable
+if (!isVercel) {
+    app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+}
 
 // DEBUG: Log all requests
 app.use((req, res, next) => {
@@ -122,11 +127,15 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
                 console.error('Supabase upload fail', err);
                 image_path = fileName;
             }
-            // save locally ONLY if not on Vercel
-            if (!process.env.VERCEL) {
-                const filePath = path.join(__dirname, 'uploads', fileName);
-                if (!fs.existsSync(path.join(__dirname, 'uploads'))) fs.mkdirSync(path.join(__dirname, 'uploads'), { recursive: true });
-                fs.writeFileSync(filePath, req.file.buffer);
+            // save locally (swallow errors on Vercel's read-only filesystem)
+            if (!isVercel) {
+                try {
+                    const filePath = path.join(__dirname, 'uploads', fileName);
+                    if (!fs.existsSync(path.join(__dirname, 'uploads'))) fs.mkdirSync(path.join(__dirname, 'uploads'), { recursive: true });
+                    fs.writeFileSync(filePath, req.file.buffer);
+                } catch (fsErr) {
+                    console.warn('[Vercel FS] Skipping local write:', fsErr.message);
+                }
             }
         } else if (source_mode === 'Auto' && image_path) {
             // AUTO MODE FIX:
@@ -147,11 +156,15 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
                 } catch (e) { }
                 const fileName = `${Date.now()}_auto_${path.basename(localFilePath)}`;
 
-                // Save locally ONLY if not on Vercel
-                if (!process.env.VERCEL) {
-                    const newPath = path.join(__dirname, 'uploads', fileName);
-                    if (!fs.existsSync(path.join(__dirname, 'uploads'))) fs.mkdirSync(path.join(__dirname, 'uploads'), { recursive: true });
-                    fs.writeFileSync(newPath, fileBuffer);
+                // Save locally (swallow errors on Vercel's read-only filesystem)
+                if (!isVercel) {
+                    try {
+                        const newPath = path.join(__dirname, 'uploads', fileName);
+                        if (!fs.existsSync(path.join(__dirname, 'uploads'))) fs.mkdirSync(path.join(__dirname, 'uploads'), { recursive: true });
+                        fs.writeFileSync(newPath, fileBuffer);
+                    } catch (fsErr) {
+                        console.warn('[Vercel FS] Skipping local write:', fsErr.message);
+                    }
                 }
             } else {
                 console.warn(`[Auto Mode] Local file not found: ${localFilePath}`);
