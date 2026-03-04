@@ -61,6 +61,10 @@ const handleCron = async (req, res) => {
 app.get('/api/cron', handleCron);
 app.get('/cron', handleCron); // Fallback if /api is stripped
 
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', time: new Date().toISOString(), isVercel });
+});
+
 
 
 // Configure Multer to use Memory Storage (Serverless friendly)
@@ -104,6 +108,7 @@ app.get('/api/posts', async (req, res) => {
 
 // POST /api/posts - Create a new post/schedule
 app.post('/api/posts', upload.single('image'), async (req, res) => {
+    console.log('[DEBUG] POST /api/posts hit. Body keys:', Object.keys(req.body));
     try {
         const {
             caption, hashtags, internal_notes, platforms, platform_settings,
@@ -115,6 +120,7 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
 
         // Handle File Upload
         if (req.file) {
+            console.log('[DEBUG] File received:', req.file.originalname);
             // Sanitize filename: remove spaces and special characters
             const sanitizedName = req.file.originalname.replace(/[^a-zA-Z0-9.]/g, '_');
             const fileName = `${Date.now()}_${sanitizedName}`;
@@ -181,6 +187,7 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
 
         // Status is 'Processing' if immediate, else 'Pending'
         const initialStatus = (is_immediate === 'true' || is_immediate === true) ? 'Processing' : 'Pending';
+        console.log(`[DEBUG] Initial Status: ${initialStatus}. Inserting into DB...`);
 
         const { data, error } = await supabase
             .from('posts')
