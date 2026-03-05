@@ -1,13 +1,15 @@
 const dns = require('dns');
 dns.setDefaultResultOrder('ipv4first');
+console.log('[SocialManager Debug] __dirname:', __dirname);
+console.log('[SocialManager Debug] Requiring ./configService...');
 const configService = require('./configService');
+console.log('[SocialManager Debug] configService OK');
 const supabase = require('../supabaseClient');
 const axios = require('axios');
 const FormData = require('form-data');
 const { TwitterApi } = require('twitter-api-v2');
-// WhatsApp dependencies will be lazy-loaded in initializeWhatsApp
 
-// --- WhatsApp Client Initialization ---
+// WhatsApp dependencies will be lazy-loaded in initializeWhatsApp
 let whatsappClient = null;
 let isWhatsAppReady = false;
 let currentQrCode = null;

@@ -382,47 +382,6 @@ const PlatformManager = ({ selectedPlatforms, setSelectedPlatforms, platformSett
                                     </div>
                                 )}
 
-                                <div className="direct-numbers-box" style={{ marginTop: '2.5rem' }}>
-                                    <h4 className="selector-title" style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>Manually Add Group ID:</h4>
-                                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                                        <input
-                                            type="text"
-                                            className="direct-numbers-input"
-                                            placeholder="-100xxxxxxxxx (Chat ID)"
-                                            id="manual-telegram-id"
-                                            style={{
-                                                flex: '1 1 200px', padding: '1.2rem', borderRadius: '16px',
-                                                background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', color: 'white',
-                                                fontSize: '1rem'
-                                            }}
-                                        />
-                                        <button
-                                            type="button"
-                                            className="primary-btn"
-                                            style={{ padding: '1rem 2rem', width: 'auto', fontSize: '1rem', borderRadius: '16px' }}
-                                            onClick={(e) => {
-                                                e.preventDefault();
-                                                const idInput = document.getElementById('manual-telegram-id');
-                                                const chatId = idInput.value.trim();
-                                                if (!chatId) return;
-                                                setLoadingTelegramChats(true);
-                                                fetch('/api/telegram/add-chat', {
-                                                    method: 'POST',
-                                                    headers: { 'Content-Type': 'application/json' },
-                                                    body: JSON.stringify({ chatId, type: 'group' })
-                                                }).then(() => {
-                                                    idInput.value = '';
-                                                    return fetch('/api/telegram/chats');
-                                                })
-                                                    .then(res => res.json())
-                                                    .then(data => setTelegramChats(data.chats || []))
-                                                    .finally(() => setLoadingTelegramChats(false));
-                                            }}
-                                        >
-                                            Add
-                                        </button>
-                                    </div>
-                                </div>
                             </div>
                         )}
 

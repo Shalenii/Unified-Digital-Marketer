@@ -132,7 +132,9 @@ class TelegramService {
             if (error) {
                 console.error(`[TelegramService] Error saving chat ${title} (${chatId}):`, error.message);
             } else {
-                console.log(`[TelegramService] Successfully saved/updated chat: ${title} (${type}) - ID: ${chatId}`);
+                console.log(`[TelegramService] Successfully saved/updated chat: ${title} (${type}) - ID: ${chatId}. Ensuring it is visible.`);
+                // If it was previously hidden, unhide it because we've seen new activity
+                await supabase.from('telegram_chats').update({ is_hidden: false }).eq('chat_id', chatId);
             }
 
             // Auto-reply logic
@@ -172,10 +174,12 @@ class TelegramService {
         try {
             console.log('[TelegramService] Fetching saved chats from database (excluding private)...');
             // Filter out 'private' to only show Groups/Channels in the React UI
+            // Also filter out explicitly hidden chats
             const { data, error } = await supabase
                 .from('telegram_chats')
                 .select('*')
                 .neq('type', 'private')
+                .eq('is_hidden', false)
                 .order('updated_at', { ascending: false });
 
             if (error) throw error;

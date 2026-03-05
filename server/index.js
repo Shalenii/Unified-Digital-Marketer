@@ -343,44 +343,25 @@ app.get('/api/telegram/chats', async (req, res) => {
 app.post('/api/telegram/sync', async (req, res) => {
     try {
         await telegramService.fetchUpdates();
-        res.json({ success: true, message: 'Sync complete' });
+        // Restore visibility for all chats when syncing
+        await supabase.from('telegram_chats').update({ is_hidden: false }).neq('chat_id', '');
+        res.json({ success: true, message: 'Sync complete and visibility restored' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
-// POST /api/telegram/add-chat - Manually add a group ID
-app.post('/api/telegram/add-chat', async (req, res) => {
-    const { chatId, title, type } = req.body;
-    if (!chatId) return res.status(400).json({ error: 'Chat ID is required' });
 
-    try {
-        const { error } = await supabase
-            .from('telegram_chats')
-            .upsert({
-                chat_id: chatId,
-                type: type || 'group',
-                title: title || 'Manual Entry',
-                updated_at: new Date().toISOString()
-            }, { onConflict: 'chat_id' });
-
-        if (error) throw error;
-        res.json({ success: true, message: 'Chat added' });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// DELETE /api/telegram/chats/:id - Remove a manually added chat
+// DELETE /api/telegram/chats/:id - Remove a manually added chat (Soft delete)
 app.delete('/api/telegram/chats/:id', async (req, res) => {
     try {
         const { error } = await supabase
             .from('telegram_chats')
-            .delete()
+            .update({ is_hidden: true })
             .eq('chat_id', req.params.id);
 
         if (error) throw error;
-        res.json({ success: true, message: 'Chat deleted' });
+        res.json({ success: true, message: 'Chat hidden from list' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
