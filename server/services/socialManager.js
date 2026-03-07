@@ -30,18 +30,21 @@ const initializeWhatsApp = () => {
         console.log('[WhatsApp] Initializing client...');
         // Auto-detect system Chromium path (for Railway/Linux)
         let executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
+
         if (!executablePath) {
             try {
-                const { execSync } = require('child_process');
-                executablePath = execSync('which chromium || which chromium-browser || which google-chrome-stable || which google-chrome').toString().trim();
-                console.log(`[WhatsApp] Auto-detected Chromium: ${executablePath}`);
+                const isWin = process.platform === 'win32';
+                // Only try 'which' on non-windows systems
+                if (!isWin) {
+                    const { execSync } = require('child_process');
+                    executablePath = execSync('which chromium || which chromium-browser || which google-chrome-stable || which google-chrome', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+                    console.log(`[WhatsApp] Auto-detected Chromium: ${executablePath}`);
+                }
             } catch (e) {
-                console.log('[WhatsApp] No system Chromium found, using Puppeteer bundled browser.');
-                executablePath = undefined;
+                // Silently skip if detection fails
             }
-        } else {
-            console.log(`[WhatsApp] Using Chromium from env: ${executablePath}`);
         }
+        console.log(`[WhatsApp] Using Chromium from env: ${executablePath}`);
 
         whatsappClient = new Client({
             authStrategy: new LocalAuth({ dataPath: './whatsapp-session' }),
@@ -253,10 +256,13 @@ const publishToFacebook = async (caption, imageBuffer, publicImageUrl) => {
 
     if (!token || !pageId) throw new Error('Facebook credentials not found in env');
 
+    // Ensure compliance for Facebook as well
+    const compliantUrl = await ensureImageCompliance(publicImageUrl, 'Facebook');
+
     let fetchBuffer = imageBuffer;
-    if (!fetchBuffer && publicImageUrl) {
-        console.log(`[Facebook] Downloading deferred buffer from ${publicImageUrl}...`);
-        const response = await axios.get(publicImageUrl, { responseType: 'arraybuffer', timeout: 30000 });
+    if (!fetchBuffer && compliantUrl) {
+        console.log(`[Facebook] Downloading deferred buffer from ${compliantUrl}...`);
+        const response = await axios.get(compliantUrl, { responseType: 'arraybuffer', timeout: 30000 });
         fetchBuffer = Buffer.from(response.data, 'binary');
     }
 
@@ -282,21 +288,21 @@ const publishToFacebook = async (caption, imageBuffer, publicImageUrl) => {
     }
 };
 
-const ensureInstagramCompliance = async (publicImageUrl) => {
+const ensureImageCompliance = async (publicImageUrl, platform = 'Instagram') => {
     try {
-        console.log(`[Instagram Compliance] Checking image: ${publicImageUrl}`);
+        console.log(`[${platform} Compliance] Checking image: ${publicImageUrl}`);
 
         let Jimp;
         try {
             const jimpPkg = require('jimp');
             Jimp = jimpPkg.Jimp || jimpPkg;
         } catch (jimpLoadErr) {
-            console.warn('[Instagram Compliance] Jimp library not available, skipping resize.');
+            console.warn(`[${platform} Compliance] Jimp library not available, skipping resize.`);
             return publicImageUrl;
         }
 
         if (!Jimp || typeof Jimp.read !== 'function') {
-            console.warn('[Instagram Compliance] Jimp.read not found, skipping resize.');
+            console.warn(`[${platform} Compliance] Jimp.read not found, skipping resize.`);
             return publicImageUrl;
         }
 
@@ -305,34 +311,34 @@ const ensureInstagramCompliance = async (publicImageUrl) => {
         const height = image.bitmap.height;
         const ratio = width / height;
 
-        // Instagram requirements: 0.8 (4:5) to 1.91 (1.91:1)
+        // Requirements: 0.8 (4:5) to 1.91 (1.91:1)
         if (ratio >= 0.8 && ratio <= 1.91) {
-            console.log(`[Instagram Compliance] Image ratio ${ratio.toFixed(2)} is already compliant.`);
+            console.log(`[${platform} Compliance] Image ratio ${ratio.toFixed(2)} is already compliant.`);
             return publicImageUrl;
         }
 
-        console.log(`[Instagram Compliance] Ratio ${ratio.toFixed(2)} is non-compliant. Padding image...`);
+        console.log(`[${platform} Compliance] Ratio ${ratio.toFixed(2)} is non-compliant. Cropping image...`);
 
-        let targetWidth = width;
-        let targetHeight = height;
+        let cropWidth = width;
+        let cropHeight = height;
+        let x = 0;
+        let y = 0;
 
         if (ratio < 0.8) {
-            // Too tall: increase width to reach 0.8
-            targetWidth = Math.ceil(height * 0.8);
+            // Too tall: Keep width, reduce height to reach 0.8 ratio (height = width / 0.8)
+            cropHeight = Math.floor(width / 0.8);
+            y = Math.floor((height - cropHeight) / 2);
         } else {
-            // Too wide: increase height to reach 1/1.91
-            targetHeight = Math.ceil(width / 1.91);
+            // Too wide: Keep height, reduce width to reach 1.91 ratio (width = height * 1.91)
+            cropWidth = Math.floor(height * 1.91);
+            x = Math.floor((width - cropWidth) / 2);
         }
 
-        const canvas = new Jimp({ width: targetWidth, height: targetHeight, color: 0xFFFFFFFF });
-        const x = Math.floor((targetWidth - width) / 2);
-        const y = Math.floor((targetHeight - height) / 2);
-
-        canvas.composite(image, x, y);
-        const buffer = await canvas.getBuffer('image/jpeg');
+        image.crop(x, y, cropWidth, cropHeight);
+        const buffer = await image.getBuffer('image/jpeg');
 
         // Upload the fixed version to Supabase
-        const fileName = `processed_${Date.now()}_instagram.jpg`;
+        const fileName = `processed_${Date.now()}_${platform.toLowerCase()}.jpg`;
         const { data, error } = await supabase.storage.from('posts').upload(fileName, buffer, {
             contentType: 'image/jpeg',
             upsert: true
@@ -341,10 +347,10 @@ const ensureInstagramCompliance = async (publicImageUrl) => {
         if (error) throw error;
 
         const { data: { publicUrl } } = supabase.storage.from('posts').getPublicUrl(fileName);
-        console.log(`[Instagram Compliance] New compliant image URL: ${publicUrl}`);
+        console.log(`[${platform} Compliance] New compliant (cropped) image URL: ${publicUrl}`);
         return publicUrl;
     } catch (err) {
-        console.error('[Instagram Compliance] Failed to process image:', err.message);
+        console.error(`[${platform} Compliance] Failed to process image:`, err.message);
         return publicImageUrl; // Fallback to original
     }
 };
@@ -357,8 +363,8 @@ const publishToInstagram = async (caption, publicImageUrl) => {
         throw new Error('Missing FACEBOOK_PAGE_ACCESS_TOKEN or INSTAGRAM_ACCOUNT_ID in .env or settings');
     }
 
-    // Ensure compliance only for Instagram
-    const compliantUrl = await ensureInstagramCompliance(publicImageUrl);
+    // Ensure compliance
+    const compliantUrl = await ensureImageCompliance(publicImageUrl, 'Instagram');
 
     console.log(`[Instagram Graph API] Preparing to publish to Account ID: ${igAccountId}...`);
     // Add a dummy query param to help Meta detect the file type
