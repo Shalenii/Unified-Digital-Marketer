@@ -105,7 +105,11 @@ const initializeWhatsApp = () => {
 };
 
 // Initialize it immediately in background (if allowed)
-initializeWhatsApp();
+try {
+    initializeWhatsApp();
+} catch (e) {
+    console.error('[SocialManager] Failed to start WhatsApp initialization:', e.message);
+}
 // -------------------------------------
 
 // Initialize Twitter Client (v2)
@@ -143,29 +147,23 @@ const downloadImage = async (imagePath) => {
     const ext = path.extname(_filename).toLowerCase();
     const contentType = ext === '.png' ? 'image/png' : 'image/jpeg';
 
-    // VERCEL PREFERENCE: Always prefer Supabase Public URL if on Vercel
-    if (isVercel || process.env.NODE_ENV === 'production') {
-        console.log(`[Storage] Production/Vercel: Using Supabase Public URL for ${_filename}`);
-        const { data: { publicUrl } } = supabase.storage.from('posts').getPublicUrl(_filename);
-        return { buffer: null, url: publicUrl, contentType, isRemote: true };
-    }
+    // META STABILITY FIX: Always prefer Supabase Public URL for Meta compatibility.
+    // Localhost URLs or Vercel preview URLs are often unreachable by Meta's servers.
+    console.log(`[Storage] Fetching Supabase Public URL for ${_filename} to ensure Meta compatibility.`);
+    const { data: { publicUrl } } = supabase.storage.from('posts').getPublicUrl(_filename);
 
-    let baseUrl = configService.get('PUBLIC_URL') || 'http://localhost:3001';
-    if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
-    const publicUrl = `${baseUrl}/uploads/${encodeURIComponent(imagePath)}`;
-
+    // Also check if we have the buffer locally for other platforms (Twitter/WhatsApp/Telegram)
+    let buffer = null;
     try {
         const localFilePath = path.join(__dirname, '..', 'uploads', _filename);
         if (fs.existsSync(localFilePath)) {
-            const buffer = fs.readFileSync(localFilePath);
-            return { buffer, contentType, url: publicUrl, isRemote: false };
+            buffer = fs.readFileSync(localFilePath);
         }
-        throw new Error(`Local file not found: ${localFilePath}`);
     } catch (err) {
-        console.warn(`[Storage] Local fetch failed, falling back to Supabase: ${err.message}`);
-        const { data: { publicUrl: fallbackUrl } } = supabase.storage.from('posts').getPublicUrl(_filename);
-        return { buffer: null, url: fallbackUrl, contentType, isRemote: true };
+        console.warn(`[Storage] Could not read local file for buffer: ${err.message}`);
     }
+
+    return { buffer, url: publicUrl, contentType, isRemote: !!publicUrl };
 };
 
 const publish = async (platform, post) => {
@@ -364,24 +362,32 @@ const ensureImageCompliance = async (publicImageUrl, platform = 'Instagram') => 
         return publicUrl;
     } catch (err) {
         console.error(`[${platform} Compliance] Failed to process image:`, err.message);
+        if (err.data) console.error(`[${platform} Compliance] Inner Error Data:`, JSON.stringify(err.data, null, 2));
+        if (Array.isArray(err)) console.error(`[${platform} Compliance] Error Array:`, JSON.stringify(err, null, 2));
         return publicImageUrl; // Fallback to original
     }
 };
 
 const publishToInstagram = async (caption, publicImageUrl) => {
     const token = configService.get('FACEBOOK_PAGE_ACCESS_TOKEN');
-    const igAccountId = configService.get('INSTAGRAM_ACCOUNT_ID');
+    let igAccountId = configService.get('INSTAGRAM_ACCOUNT_ID');
+
+    // Convert to string safely to handle potential number/precision issues
+    if (igAccountId) igAccountId = String(igAccountId);
 
     if (!token || !igAccountId) {
         throw new Error('Missing FACEBOOK_PAGE_ACCESS_TOKEN or INSTAGRAM_ACCOUNT_ID in .env or settings');
     }
 
+    console.log(`[Instagram Graph API] Account ID: ${igAccountId} (Type: ${typeof igAccountId})`);
+
     // Ensure compliance
     const compliantUrl = await ensureImageCompliance(publicImageUrl, 'Instagram');
 
     console.log(`[Instagram Graph API] Preparing to publish to Account ID: ${igAccountId}...`);
-    // Add a dummy query param to help Meta detect the file type
-    const finalImageUrl = compliantUrl.includes('?') ? `${compliantUrl}&type=.jpg` : `${compliantUrl}?type=.jpg`;
+    // Add a dummy query param ONLY if Meta might struggle to detect the file type (e.g. no extension)
+    const hasExtension = /\.(jpg|jpeg|png)$/i.test(compliantUrl.split('?')[0]);
+    const finalImageUrl = hasExtension ? compliantUrl : (compliantUrl.includes('?') ? `${compliantUrl}&type=.jpg` : `${compliantUrl}?type=.jpg`);
     console.log(`[Instagram Graph API] Final Image URL: ${finalImageUrl}`);
 
     try {
@@ -403,19 +409,47 @@ const publishToInstagram = async (caption, publicImageUrl) => {
         console.log(`[Instagram Graph API] Media container created successfully. ID: ${creationId}`);
 
         // Step 2: Publish the Container
-        const publishRes = await axios.post(
-            `https://graph.facebook.com/v19.0/${igAccountId}/media_publish`,
-            {
-                creation_id: creationId,
-                access_token: token
-            },
-            {
-                timeout: 30000 // 30s timeout
-            }
-        );
+        // Meta sometimes needs a few seconds to process the image before it's ready to publish.
+        // We implement a retry loop with delays.
+        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+        let publishRes;
+        let attempts = 0;
+        const maxAttempts = 5;
 
-        console.log(`[Instagram Graph API] Post published successfully. Published Media ID: ${publishRes.data.id}`);
-        return { success: true, platform: 'Instagram', id: publishRes.data.id };
+        console.log(`[Instagram Graph API] Waiting for Meta to process media...`);
+        await sleep(5000); // Initial 5s wait
+
+        while (attempts < maxAttempts) {
+            try {
+                attempts++;
+                console.log(`[Instagram Graph API] Publishing attempt ${attempts}/${maxAttempts}...`);
+                publishRes = await axios.post(
+                    `https://graph.facebook.com/v19.0/${igAccountId}/media_publish`,
+                    {
+                        creation_id: creationId,
+                        access_token: token
+                    },
+                    {
+                        timeout: 30000 // 30s timeout
+                    }
+                );
+
+                if (publishRes.data.id) {
+                    console.log(`[Instagram Graph API] Post published successfully. Published Media ID: ${publishRes.data.id}`);
+                    return { success: true, platform: 'Instagram', id: publishRes.data.id };
+                }
+            } catch (err) {
+                const innerMsg = err.response?.data?.error?.message || err.message;
+                console.warn(`[Instagram Graph API] Attempt ${attempts} failed: ${innerMsg}`);
+
+                if (attempts < maxAttempts) {
+                    console.log(`[Instagram Graph API] Retrying in 5 seconds...`);
+                    await sleep(5000);
+                } else {
+                    throw err; // Out of retries
+                }
+            }
+        }
 
     } catch (error) {
         let errorMsg = error.response?.data?.error?.message || error.message;
@@ -423,7 +457,12 @@ const publishToInstagram = async (caption, publicImageUrl) => {
         console.error('[Instagram Graph API Error]:', JSON.stringify(detailedError, null, 2));
 
         if (errorMsg.includes('Invalid image_url') || errorMsg.includes('Invalid URL') || errorMsg.includes('Fetch Image Error') || errorMsg.toLowerCase().includes('fetch')) {
-            errorMsg += ' (CRITICAL: Meta servers cannot reach localhost. Please ensure your PUBLIC_URL in .env is set to a real ngrok URL like https://xxxx.ngrok-free.app)';
+            errorMsg += ' (CRITICAL: Meta servers cannot reach the image URL. Ensure it is a public Supabase URL.)';
+        }
+
+        if (errorMsg.includes('request limit reached')) {
+            errorMsg = `Meta Rate Limit: ${errorMsg}. Meta has temporarily blocked requests to protect their systems. Please wait at least 1 hour.`;
+            console.warn(`[Instagram] RATE LIMIT HIT. Advise user to stop posting for 1-2 hours.`);
         }
 
         throw new Error(`Instagram Official API failed: ${errorMsg}`);
@@ -749,5 +788,5 @@ const disconnectWhatsApp = async () => {
     setTimeout(initializeWhatsApp, 1000);
 };
 
-module.exports = { publish, getWhatsAppStatus, getWhatsAppGroups, requestWhatsAppPairingCode, disconnectWhatsApp };
+module.exports = { publish, getWhatsAppStatus, getWhatsAppGroups, requestWhatsAppPairingCode, disconnectWhatsApp, ensureImageCompliance };
 

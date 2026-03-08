@@ -217,24 +217,34 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
 
         // If immediate, trigger publishing logic NOW
         if (initialStatus === 'Processing') {
-            const socialManager = require('./services/socialManager');
-            const platformList = JSON.parse(platforms || '[]');
-            const results = [];
-            const errors = [];
-
             try {
-                // Run all platforms in PARALLEL
-                await Promise.all(platformList.map(async (p) => {
-                    try {
-                        console.log(`[Publishing] Starting ${p} for post ${post.id}`);
-                        await socialManager.publish(p, post);
-                        results.push(p);
-                        console.log(`[Publishing] ${p} success for post ${post.id}`);
-                    } catch (pubErr) {
-                        console.error(`[Publishing] ${p} FAILED:`, pubErr.message);
-                        errors.push(`${p}: ${pubErr.message}`);
+                const socialManager = require('./services/socialManager');
+                const platformList = JSON.parse(platforms || '[]');
+                const results = [];
+                const errors = [];
+
+                try {
+                    // SEQUENTIAL PROCESSING with delays to avoid Meta rate limits
+                    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+                    for (const p of platformList) {
+                        try {
+                            console.log(`[Publishing] Starting ${p} for post ${post.id}`);
+                            await socialManager.publish(p, post);
+                            results.push(p);
+                            console.log(`[Publishing] ${p} success for post ${post.id}`);
+
+                            // Add delay between platforms (2 seconds)
+                            await sleep(2000);
+                        } catch (pubErr) {
+                            console.error(`[Publishing] ${p} FAILED:`, pubErr.message);
+                            errors.push(`${p}: ${pubErr.message}`);
+                        }
                     }
-                }));
+                } catch (loopErr) {
+                    console.error('[Publishing] Loop error:', loopErr.message);
+                    errors.push(`General: ${loopErr.message}`);
+                }
 
                 // Determine final status
                 let finalStatus;
