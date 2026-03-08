@@ -260,7 +260,13 @@ const publishToFacebook = async (caption, imageBuffer, publicImageUrl) => {
     const compliantUrl = await ensureImageCompliance(publicImageUrl, 'Facebook');
 
     let fetchBuffer = imageBuffer;
-    if (!fetchBuffer && compliantUrl) {
+    // CRITICAL BUG FIX: If compliantUrl is different, we MUST re-fetch the buffer
+    // otherwise we send the original non-compliant buffer to Facebook.
+    if (compliantUrl !== publicImageUrl) {
+        console.log(`[Facebook] Compliance required. Re-downloading cropped buffer from ${compliantUrl}...`);
+        const response = await axios.get(compliantUrl, { responseType: 'arraybuffer', timeout: 30000 });
+        fetchBuffer = Buffer.from(response.data, 'binary');
+    } else if (!fetchBuffer && compliantUrl) {
         console.log(`[Facebook] Downloading deferred buffer from ${compliantUrl}...`);
         const response = await axios.get(compliantUrl, { responseType: 'arraybuffer', timeout: 30000 });
         fetchBuffer = Buffer.from(response.data, 'binary');
@@ -271,7 +277,7 @@ const publishToFacebook = async (caption, imageBuffer, publicImageUrl) => {
         form.append('message', caption);
         form.append('access_token', token);
         // FormData requires a filename for Buffers
-        form.append('source', fetchBuffer || imageBuffer, { filename: 'image.jpg' });
+        form.append('source', fetchBuffer, { filename: 'image.jpg' });
 
         const response = await axios.post(
             `https://graph.facebook.com/${pageId}/photos`,
@@ -284,7 +290,14 @@ const publishToFacebook = async (caption, imageBuffer, publicImageUrl) => {
 
         return { success: true, platform: 'Facebook', id: response.data.id };
     } catch (error) {
-        throw new Error(`Facebook failed: ${error.response?.data?.error?.message || error.message}`);
+        const msg = error.response?.data?.error?.message || error.message;
+        if (msg.includes('aspect ratio')) {
+            throw new Error(`Facebook aspect ratio error: ${msg}. Even after cropping, Meta rejected it.`);
+        }
+        if (msg.includes('request limit reached')) {
+            throw new Error(`Facebook Rate Limit: ${msg}. Please wait before trying again.`);
+        }
+        throw new Error(`Facebook failed: ${msg}`);
     }
 };
 

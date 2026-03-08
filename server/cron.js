@@ -23,6 +23,8 @@ const runCronJob = async () => {
         return;
     }
 
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
     for (const post of rows) {
         // 1. LOCK: Immediately mark as 'Processing' to prevent next cron from picking it up
         // Ensure atomic update by verifying 'Pending' status
@@ -49,15 +51,19 @@ const runCronJob = async () => {
                 console.log(`Publishing to ${platform}...`);
                 await socialManager.publish(platform, post);
                 console.log(`Successfully published to ${platform}`);
+
+                // Add a small delay between platforms to avoid burst rate limits
+                await sleep(2000);
             } catch (pubError) {
                 console.error(`\n===========================================`);
                 console.error(`[CRON ERROR] Failed to publish to ${platform}:`);
                 console.error(pubError.stack || pubError);
                 console.error(`===========================================\n`);
-                // We don't fail the whole post yet, maybe one platform failed but others succeeded.
-                // Ideally we'd track status per platform, but for now we continue.
             }
         }
+
+        // Add a delay between posts if processing multiple
+        await sleep(3000);
 
         // 3. FINALIZE: Update status to Published
         const { error: updateErr } = await supabase
