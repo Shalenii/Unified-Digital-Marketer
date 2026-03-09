@@ -359,19 +359,26 @@ const ensureImageCompliance = async (publicImageUrl, platform = 'Instagram') => 
         const buffer = await image.getBuffer('image/jpeg');
         const fileName = `compliant_${Date.now()}_${platform.toLowerCase()}.jpg`;
 
-        console.log(`[${platform} Compliance] Uploading compliant JPEG to Supabase...`);
+        // Uint8Array conversion for better compatibility
+        const uint8Array = new Uint8Array(buffer);
+
+        console.log(`[${platform} Compliance] Preparing upload...`);
+        console.log(`[${platform} Compliance] LOG: fileName=${fileName} (type: ${typeof fileName})`);
+        console.log(`[${platform} Compliance] LOG: buffer isBuffer=${Buffer.isBuffer(buffer)}, Length=${buffer?.length}`);
+        console.log(`[${platform} Compliance] LOG: uint8Array length=${uint8Array.length}, isUint8Array=${uint8Array instanceof Uint8Array}`);
+        console.log(`[${platform} Compliance] LOG: supabase type=${supabase?.constructor?.name}, storage type=${supabase?.storage?.constructor?.name}`);
 
         const { data: uploadData, error: uploadError } = await supabase
             .storage
             .from('posts')
-            .upload(fileName, buffer, {
+            .upload(fileName, uint8Array, {
                 contentType: 'image/jpeg',
                 upsert: true
             });
 
         if (uploadError) {
-            console.error(`[${platform} Compliance] Supabase upload FAILED:`, uploadError.message || uploadError);
-            throw new Error(`Supabase upload failed: ${uploadError.message || JSON.stringify(uploadError)}`);
+            console.error(`[${platform} Compliance] Supabase upload FAILED:`, uploadError);
+            throw new Error(`Supabase upload failed: ${typeof uploadError === 'object' ? JSON.stringify(uploadError) : uploadError}`);
         }
 
         const { data: { publicUrl } } = supabase
