@@ -358,34 +358,27 @@ const ensureImageCompliance = async (publicImageUrl, platform = 'Instagram') => 
         // ALWAYS convert to JPEG and re-upload to ensure Meta sees a proper image
         const buffer = await image.getBuffer('image/jpeg');
         const fileName = `compliant_${Date.now()}_${platform.toLowerCase()}.jpg`;
-        const supabaseUrl = process.env.SUPABASE_URL;
-        const supabaseKey = process.env.SUPABASE_KEY;
 
         console.log(`[${platform} Compliance] Uploading compliant JPEG to Supabase...`);
 
-        const uploadRes = await axios.post(
-            `${supabaseUrl}/storage/v1/object/posts/${fileName}`,
-            buffer,
-            {
-                headers: {
-                    'Authorization': `Bearer ${supabaseKey}`,
-                    'apikey': supabaseKey,
-                    'Content-Type': 'image/jpeg',
-                    'x-upsert': 'true'
-                },
-                maxContentLength: Infinity,
-                maxBodyLength: Infinity,
-                validateStatus: () => true // Don't throw on non-2xx
-            }
-        );
+        const { data: uploadData, error: uploadError } = await supabase
+            .storage
+            .from('posts')
+            .upload(fileName, buffer, {
+                contentType: 'image/jpeg',
+                upsert: true
+            });
 
-        if (uploadRes.status < 200 || uploadRes.status >= 300) {
-            console.error(`[${platform} Compliance] Supabase upload FAILED with status ${uploadRes.status}:`, JSON.stringify(uploadRes.data));
-            // Don't fall back to broken URL — throw so caller can properly handle
-            throw new Error(`Supabase upload returned status ${uploadRes.status}: ${JSON.stringify(uploadRes.data)}`);
+        if (uploadError) {
+            console.error(`[${platform} Compliance] Supabase upload FAILED:`, uploadError.message || uploadError);
+            throw new Error(`Supabase upload failed: ${uploadError.message || JSON.stringify(uploadError)}`);
         }
 
-        const publicUrl = `${supabaseUrl}/storage/v1/object/public/posts/${fileName}`;
+        const { data: { publicUrl } } = supabase
+            .storage
+            .from('posts')
+            .getPublicUrl(fileName);
+
         console.log(`[${platform} Compliance] Successfully uploaded: ${publicUrl}`);
         return publicUrl;
 
