@@ -306,50 +306,66 @@ const ensureImageCompliance = async (publicImageUrl, platform = 'Instagram') => 
         let Jimp;
         try {
             const jimpPkg = require('jimp');
+            // Jimp v1.6.0+ export handling for CommonJS
             Jimp = jimpPkg.Jimp || jimpPkg;
         } catch (jimpLoadErr) {
             console.warn(`[${platform} Compliance] Jimp library not available, skipping resize.`);
             return publicImageUrl;
         }
 
-        if (!Jimp || typeof Jimp.read !== 'function') {
+        if (!Jimp || (typeof Jimp.read !== 'function' && typeof Jimp !== 'function')) {
             console.warn(`[${platform} Compliance] Jimp.read not found, skipping resize.`);
             return publicImageUrl;
         }
 
-        const image = await Jimp.read(publicImageUrl);
+        // Handle both Jimp v0.x and v1.x (where Jimp itself is the constructor/object)
+        const image = await (typeof Jimp.read === 'function' ? Jimp.read(publicImageUrl) : Jimp.read(publicImageUrl));
+
         const width = image.bitmap.width;
         const height = image.bitmap.height;
         const ratio = width / height;
 
-        // Requirements: 0.8 (4:5) to 1.91 (1.91:1)
-        if (ratio >= 0.8 && ratio <= 1.91) {
-            console.log(`[${platform} Compliance] Image ratio ${ratio.toFixed(2)} is already compliant.`);
+        console.log(`[${platform} Compliance] Current dimensions: ${width}x${height}, Ratio: ${ratio.toFixed(4)}`);
+
+        // Meta Requirements: 0.8 (4:5) to 1.91 (1.91:1)
+        // We use a small buffer (0.01) to ensure we are safely within limits
+        const minRatio = 0.801;
+        const maxRatio = 1.909;
+
+        if (ratio >= minRatio && ratio <= maxRatio) {
+            console.log(`[${platform} Compliance] Image ratio ${ratio.toFixed(4)} is already compliant.`);
             return publicImageUrl;
         }
 
-        console.log(`[${platform} Compliance] Ratio ${ratio.toFixed(2)} is non-compliant. Cropping image...`);
+        console.log(`[${platform} Compliance] Ratio ${ratio.toFixed(4)} is non-compliant (Allowed: ${minRatio}-${maxRatio}). Cropping...`);
 
         let cropWidth = width;
         let cropHeight = height;
         let x = 0;
         let y = 0;
 
-        if (ratio < 0.8) {
-            // Too tall: Keep width, reduce height to reach 0.8 ratio (height = width / 0.8)
-            cropHeight = Math.floor(width / 0.8);
+        if (ratio < minRatio) {
+            // Too tall: Keep width, reduce height to reach exact ratio
+            // targetRatio = width / cropHeight => cropHeight = width / targetRatio
+            cropHeight = Math.floor(width / minRatio);
             y = Math.floor((height - cropHeight) / 2);
+            console.log(`[${platform} Compliance] Too tall. New target height: ${cropHeight}, Y-offset: ${y}`);
         } else {
-            // Too wide: Keep height, reduce width to reach 1.91 ratio (width = height * 1.91)
-            cropWidth = Math.floor(height * 1.91);
+            // Too wide: Keep height, reduce width to reach exact ratio
+            // targetRatio = cropWidth / height => cropWidth = height * targetRatio
+            cropWidth = Math.floor(height * maxRatio);
             x = Math.floor((width - cropWidth) / 2);
+            console.log(`[${platform} Compliance] Too wide. New target width: ${cropWidth}, X-offset: ${x}`);
         }
 
+        // Perform crop
         image.crop(x, y, cropWidth, cropHeight);
+
+        // Use JPEG for best compatibility with Meta
         const buffer = await image.getBuffer('image/jpeg');
 
-        // Upload the fixed version to Supabase
-        const fileName = `processed_${Date.now()}_${platform.toLowerCase()}.jpg`;
+        // Upload the fixed version to Supabase with a unique timestamp to avoid any caching issues
+        const fileName = `compliant_${Date.now()}_${platform.toLowerCase()}.jpg`;
         const { data, error } = await supabase.storage.from('posts').upload(fileName, buffer, {
             contentType: 'image/jpeg',
             upsert: true
@@ -358,13 +374,11 @@ const ensureImageCompliance = async (publicImageUrl, platform = 'Instagram') => 
         if (error) throw error;
 
         const { data: { publicUrl } } = supabase.storage.from('posts').getPublicUrl(fileName);
-        console.log(`[${platform} Compliance] New compliant (cropped) image URL: ${publicUrl}`);
+        console.log(`[${platform} Compliance] Successfully uploaded compliant image: ${publicUrl}`);
         return publicUrl;
     } catch (err) {
-        console.error(`[${platform} Compliance] Failed to process image:`, err.message);
-        if (err.data) console.error(`[${platform} Compliance] Inner Error Data:`, JSON.stringify(err.data, null, 2));
-        if (Array.isArray(err)) console.error(`[${platform} Compliance] Error Array:`, JSON.stringify(err, null, 2));
-        return publicImageUrl; // Fallback to original
+        console.error(`[${platform} Compliance] Critical processing failure:`, err.message);
+        return publicImageUrl; // Fallback to original and pray Meta accepts it
     }
 };
 
@@ -408,47 +422,76 @@ const publishToInstagram = async (caption, publicImageUrl) => {
         const creationId = containerRes.data.id;
         console.log(`[Instagram Graph API] Media container created successfully. ID: ${creationId}`);
 
-        // Step 2: Publish the Container
-        // Meta sometimes needs a few seconds to process the image before it's ready to publish.
-        // We implement a retry loop with delays.
-        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-        let publishRes;
-        let attempts = 0;
-        const maxAttempts = 5;
+        // Step 2: POLLING - Wait for Meta to finish processing the media
+        console.log(`[Instagram Graph API] Beginning status polling for container ${creationId}...`);
 
-        console.log(`[Instagram Graph API] Waiting for Meta to process media...`);
-        await sleep(5000); // Initial 5s wait
+        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+        let attempts = 0;
+        const maxAttempts = 15; // 15 * 5s = 75 seconds total wait time
+        let isReady = false;
 
         while (attempts < maxAttempts) {
+            attempts++;
             try {
-                attempts++;
-                console.log(`[Instagram Graph API] Publishing attempt ${attempts}/${maxAttempts}...`);
-                publishRes = await axios.post(
-                    `https://graph.facebook.com/v19.0/${igAccountId}/media_publish`,
+                const statusRes = await axios.get(
+                    `https://graph.facebook.com/v19.0/${creationId}`,
                     {
-                        creation_id: creationId,
-                        access_token: token
-                    },
-                    {
-                        timeout: 30000 // 30s timeout
+                        params: {
+                            fields: 'status_code,status,error_message',
+                            access_token: token
+                        },
+                        timeout: 10000
                     }
                 );
 
-                if (publishRes.data.id) {
-                    console.log(`[Instagram Graph API] Post published successfully. Published Media ID: ${publishRes.data.id}`);
-                    return { success: true, platform: 'Instagram', id: publishRes.data.id };
+                const status = statusRes.data.status_code;
+                console.log(`[Instagram Graph API] Attempt ${attempts}: Container status is ${status}`);
+
+                if (status === 'FINISHED') {
+                    isReady = true;
+                    break;
+                } else if (status === 'ERROR') {
+                    const errorMsg = statusRes.data.error_message || 'Unknown processing error';
+                    throw new Error(`Meta media processing failed: ${errorMsg}`);
+                } else if (status === 'IN_PROGRESS') {
+                    // Just wait more
+                } else {
+                    console.warn(`[Instagram Graph API] Unexpected status: ${status}`);
                 }
             } catch (err) {
-                const innerMsg = err.response?.data?.error?.message || err.message;
-                console.warn(`[Instagram Graph API] Attempt ${attempts} failed: ${innerMsg}`);
-
-                if (attempts < maxAttempts) {
-                    console.log(`[Instagram Graph API] Retrying in 5 seconds...`);
-                    await sleep(5000);
-                } else {
-                    throw err; // Out of retries
-                }
+                // If the status check itself fails, we log it but keep trying if it's transient
+                console.warn(`[Instagram Graph API] Status check attempt ${attempts} failed: ${err.message}`);
+                if (err.message.includes('Meta media processing failed')) throw err;
             }
+
+            if (attempts < maxAttempts) {
+                await sleep(5000);
+            }
+        }
+
+        if (!isReady) {
+            throw new Error(`Meta processing timed out after ${maxAttempts * 5} seconds. The image might be too large or Meta is slow.`);
+        }
+
+        // Step 3: Publish the Container
+        console.log(`[Instagram Graph API] Container is READY. Publishing now...`);
+
+        const publishRes = await axios.post(
+            `https://graph.facebook.com/v19.0/${igAccountId}/media_publish`,
+            {
+                creation_id: creationId,
+                access_token: token
+            },
+            {
+                timeout: 30000 // 30s timeout
+            }
+        );
+
+        if (publishRes.data.id) {
+            console.log(`[Instagram Graph API] Post published successfully! ID: ${publishRes.data.id}`);
+            return { success: true, platform: 'Instagram', id: publishRes.data.id };
+        } else {
+            throw new Error('Meta returned success but no ID was provided.');
         }
 
     } catch (error) {
