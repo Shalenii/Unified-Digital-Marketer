@@ -18,6 +18,16 @@ const runCronJob = async () => {
         return;
     }
 
+    // 0. RECOVERY: Reset any posts that have been stuck in 'Processing' for more than 5 minutes
+    // This happens if Vercel kills the serverless function before it finishes.
+    const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const { error: resetErr } = await supabase
+        .from('posts')
+        .update({ status: 'Pending' })
+        .eq('status', 'Processing');
+
+    if (resetErr) console.error('Error resetting stuck Processing posts:', resetErr);
+
     if (!rows || rows.length === 0) {
         console.log('No pending posts found.');
         return;
@@ -25,7 +35,8 @@ const runCronJob = async () => {
 
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-    for (const post of rows) {
+    // Process all posts CONCURRENTLY to prevent Vercel Serverless timeouts
+    await Promise.allSettled(rows.map(async (post) => {
         // 1. LOCK: Immediately mark as 'Processing' to prevent next cron from picking it up
         // Ensure atomic update by verifying 'Pending' status
         const { data: lockData, error: lockErr } = await supabase
@@ -38,7 +49,7 @@ const runCronJob = async () => {
         if (lockErr || !lockData || lockData.length === 0) {
             if (lockErr) console.error(`Failed to lock post ${post.id}:`, lockErr);
             else console.log(`Skipping post ID ${post.id}: Already locked or processed by another worker.`);
-            continue;
+            return;
         }
 
         console.log(`Processing post ID ${post.id}...`);
@@ -49,6 +60,7 @@ const runCronJob = async () => {
         const errors = [];
 
         // 2. PROCESS: Publish to all platforms
+        // Process platforms sequentially for a single post to avoid rate limits on the same account
         for (const platform of platforms) {
             try {
                 console.log(`[Cron] Publishing to ${platform} for post ${post.id}...`);
@@ -130,7 +142,7 @@ const runCronJob = async () => {
                 else console.log(`Scheduled next recurring post for ${nextTime.toISOString()}`);
             }
         }
-    }
+    }));
 };
 
 const startCron = () => {
