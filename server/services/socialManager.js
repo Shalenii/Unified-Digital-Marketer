@@ -456,7 +456,7 @@ const publishToInstagram = async (caption, publicImageUrl) => {
                     `https://graph.facebook.com/v19.0/${creationId}`,
                     {
                         params: {
-                            fields: 'status_code,status',
+                            fields: 'status_code',
                             access_token: token
                         },
                         timeout: 10000
