@@ -1,142 +1,18 @@
 [
   {
-    "id": 245,
-    "status": "Failed",
-    "platforms": "[\"Instagram\"]",
-    "internal_notes": "All platforms failed: Instagram: Instagram Official API failed: Meta processing timed out after 75 seconds. The image might be too large or Meta is slow.",
-    "created_at": "2026-03-09T15:36:00.4076+00:00"
-  },
-  {
-    "id": 244,
-    "status": "Failed",
-    "platforms": "[\"Instagram\"]",
-    "internal_notes": "All platforms failed: Instagram: Image compliance upload failed: Could not load Buffer from https://powpkqqtxxczxghyhgii.supabase.co/storage/v1/object/public/posts/1773070458403_2.png",
-    "created_at": "2026-03-09T15:34:48.660718+00:00"
-  },
-  {
-    "id": 242,
-    "status": "Failed",
-    "platforms": "[\"Instagram\"]",
-    "internal_notes": "All platforms failed: Instagram: Instagram Official API failed: Meta processing timed out after 75 seconds. The image might be too large or Meta is slow.",
-    "created_at": "2026-03-09T15:25:18.279198+00:00"
-  },
-  {
-    "id": 233,
+    "id": 249,
+    "created_at": "2026-03-09T16:07:43.59206+00:00",
+    "image_path": "https://powpkqqtxxczxghyhgii.supabase.co/storage/v1/object/public/posts/1773072461769_illu.png",
+    "caption": "\r\n\r\n",
+    "hashtags": "",
+    "internal_notes": "Published to: Telegram",
+    "platforms": "[\"Telegram\"]",
+    "platform_settings": "{}",
+    "scheduled_time": "2026-03-09T16:07:32.831+00:00",
     "status": "Published",
-    "platforms": "[\"Facebook\",\"Instagram\"]",
-    "internal_notes": "Partial Success. OK: Facebook | ERR: Instagram: Instagram Official API failed: The aspect ratio is not supported.",
-    "created_at": "2026-03-09T08:38:19.276682+00:00"
-  },
-  {
-    "id": 232,
-    "status": "Published",
-    "platforms": "[\"Instagram\",\"Facebook\",\"Telegram\"]",
-    "internal_notes": "Published to: Instagram, Facebook, Telegram",
-    "created_at": "2026-03-08T17:51:58.896277+00:00"
-  },
-  {
-    "id": 231,
-    "status": "Published",
-    "platforms": "[\"Instagram\",\"Facebook\",\"Telegram\"]",
-    "internal_notes": "Partial Success. OK: Facebook, Telegram | ERR: Instagram: Instagram Official API failed: Fatal",
-    "created_at": "2026-03-08T13:51:14.027527+00:00"
-  },
-  {
-    "id": 230,
-    "status": "Published",
-    "platforms": "[\"Facebook\",\"Telegram\",\"Instagram\"]",
-    "internal_notes": "Partial Success. OK: Facebook, Telegram | ERR: Instagram: Instagram Official API failed: Fatal",
-    "created_at": "2026-03-08T13:09:28.776172+00:00"
-  },
-  {
-    "id": 229,
-    "status": "Published",
-    "platforms": "[\"Instagram\",\"Facebook\"]",
-    "internal_notes": "Partial Success. OK: Facebook | ERR: Instagram: Instagram Official API failed: Fatal",
-    "created_at": "2026-03-08T12:45:14.395982+00:00"
-  },
-  {
-    "id": 226,
-    "status": "Published",
-    "platforms": "[\"Telegram\",\"Instagram\",\"Facebook\"]",
-    "internal_notes": "Partial Success. OK: Telegram, Facebook | ERR: Instagram: Instagram Official API failed: Fatal",
-    "created_at": "2026-03-08T12:28:38.846941+00:00"
-  },
-  {
-    "id": 225,
-    "status": "Published",
-    "platforms": "[\"Telegram\",\"Instagram\",\"Facebook\"]",
-    "internal_notes": "Partial Success. OK: Telegram, Facebook | ERR: Instagram: Instagram Official API failed: Fatal",
-    "created_at": "2026-03-08T12:26:57.153689+00:00"
-  },
-  {
-    "id": 224,
-    "status": "Published",
-    "platforms": "[\"Facebook\",\"Instagram\",\"Telegram\"]",
-    "internal_notes": "Partial Success. OK: Facebook, Telegram | ERR: Instagram: Instagram Official API failed: The aspect ratio is not supported.",
-    "created_at": "2026-03-08T12:12:58.021289+00:00"
-  },
-  {
-    "id": 223,
-    "status": "Published",
-    "platforms": "{\"Facebook\",\"Instagram\"}",
-    "internal_notes": "Test result - OK: Facebook | ERR: Instagram: Instagram Official API failed: Fatal (Manual Test Run)",
-    "created_at": "2026-03-08T09:42:33.571309+00:00"
-  },
-  {
-    "id": 222,
-    "status": "Published",
-    "platforms": "{\"Facebook\",\"Instagram\"}",
-    "internal_notes": "Test result - OK: Facebook | ERR: Instagram: Instagram Official API failed: Fatal (Manual Test Run)",
-    "created_at": "2026-03-08T09:39:29.680472+00:00"
-  },
-  {
-    "id": 221,
-    "status": "Published",
-    "platforms": "{\"Facebook\",\"Instagram\"}",
-    "internal_notes": "Test result - OK: Facebook | ERR: Instagram: Instagram Official API failed: Fatal (Manual Test Run)",
-    "created_at": "2026-03-08T09:38:22.266193+00:00"
-  },
-  {
-    "id": 220,
-    "status": "Published",
-    "platforms": "{\"Facebook\",\"Instagram\"}",
-    "internal_notes": "Test result - OK: Facebook | ERR: Instagram: Instagram Official API failed: Fatal (Manual Test Run)",
-    "created_at": "2026-03-08T09:35:06.800304+00:00"
-  },
-  {
-    "id": 219,
-    "status": "Published",
-    "platforms": "{\"Facebook\",\"Instagram\"}",
-    "internal_notes": "Test result - OK: Facebook | ERR: Instagram: Instagram Official API failed: Fatal (Manual Test Run)",
-    "created_at": "2026-03-08T09:34:01.960106+00:00"
-  },
-  {
-    "id": 217,
-    "status": "Published",
-    "platforms": "[\"Facebook\",\"Instagram\"]",
-    "internal_notes": "Test result - OK: Facebook | ERR: Instagram: Instagram Official API failed: Fatal (Manual Test Run)",
-    "created_at": "2026-03-08T09:32:58.181714+00:00"
-  },
-  {
-    "id": 216,
-    "status": "Failed",
-    "platforms": "[\"Facebook\",\"Instagram\"]",
-    "internal_notes": "Test result - OK:  | ERR: Facebook: Request failed with status code 400; Instagram: Instagram Official API failed: Only photo or video can be accepted as media type. (Manual Test Run)",
-    "created_at": "2026-03-08T09:24:17.255724+00:00"
-  },
-  {
-    "id": 215,
-    "status": "Failed",
-    "platforms": "[\"Instagram\"]",
-    "internal_notes": "All platforms failed: Instagram: Instagram Official API failed: Fatal",
-    "created_at": "2026-03-08T09:14:44.554612+00:00"
-  },
-  {
-    "id": 214,
-    "status": "Failed",
-    "platforms": "[\"Instagram\"]",
-    "internal_notes": "All platforms failed: Instagram: Instagram Official API failed: An unexpected error has occurred. Please retry your request later.",
-    "created_at": "2026-03-08T09:02:17.953907+00:00"
+    "is_recurring": false,
+    "recurrence_frequency": "Daily",
+    "recurrence_end_date": null,
+    "source_mode": "Manual"
   }
 ]
