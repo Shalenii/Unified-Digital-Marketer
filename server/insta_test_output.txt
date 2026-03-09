@@ -1,0 +1,21 @@
+2026-03-09T13:51:13.045Z | --- Instagram Publish Test Starting ---
+2026-03-09T13:51:13.046Z | ERROR: socialManager.publishToInstagram is not a function
+2026-03-09T13:51:13.047Z | --- Test Complete ---
+2026-03-09T13:52:31.072Z | --- Instagram Publish Test Starting ---
+2026-03-09T13:52:34.920Z | ERROR: Instagram Official API failed: Only photo or video can be accepted as media type.
+2026-03-09T13:52:34.921Z | --- Test Complete ---
+2026-03-09T14:16:04.150Z | --- Instagram Publish Test Starting ---
+2026-03-09T14:17:32.953Z | ERROR: Instagram Official API failed: Meta processing timed out after 75 seconds. The image might be too large or Meta is slow.
+2026-03-09T14:17:32.960Z | --- Test Complete ---
+2026-03-09T14:19:34.063Z | --- Instagram Publish Test Starting ---
+2026-03-09T14:21:50.272Z | --- Instagram Publish Test Starting ---
+2026-03-09T14:22:27.072Z | ERROR: Instagram Official API failed: Meta processing timed out after 150 seconds. The image might be too large or Meta is slow.
+2026-03-09T14:22:27.073Z | --- Test Complete ---
+2026-03-09T14:24:42.617Z | ERROR: Instagram Official API failed: Meta processing timed out after 150 seconds. The image might be too large or Meta is slow.
+2026-03-09T14:24:42.618Z | --- Test Complete ---
+2026-03-09T14:25:11.662Z | --- Instagram Publish Test Starting ---
+2026-03-09T14:28:10.285Z | ERROR: Instagram Official API failed: Meta processing timed out after 150 seconds. The image might be too large or Meta is slow.
+2026-03-09T14:28:10.291Z | --- Test Complete ---
+2026-03-09T14:28:43.015Z | --- Instagram Publish Test Starting ---
+2026-03-09T14:29:04.485Z | SUCCESS: {"success":true,"platform":"Instagram","id":"18091707509519454"}
+2026-03-09T14:29:04.486Z | --- Test Complete ---

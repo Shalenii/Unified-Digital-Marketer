@@ -328,57 +328,73 @@ const ensureImageCompliance = async (publicImageUrl, platform = 'Instagram') => 
         console.log(`[${platform} Compliance] Current dimensions: ${width}x${height}, Ratio: ${ratio.toFixed(4)}`);
 
         // Meta Requirements: 0.8 (4:5) to 1.91 (1.91:1)
-        // We use a small buffer (0.01) to ensure we are safely within limits
         const minRatio = 0.801;
         const maxRatio = 1.909;
 
-        if (ratio >= minRatio && ratio <= maxRatio) {
-            console.log(`[${platform} Compliance] Image ratio ${ratio.toFixed(4)} is already compliant.`);
-            return publicImageUrl;
-        }
-
-        console.log(`[${platform} Compliance] Ratio ${ratio.toFixed(4)} is non-compliant (Allowed: ${minRatio}-${maxRatio}). Cropping...`);
-
-        let cropWidth = width;
-        let cropHeight = height;
-        let x = 0;
-        let y = 0;
-
-        if (ratio < minRatio) {
-            // Too tall: Keep width, reduce height to reach exact ratio
-            // targetRatio = width / cropHeight => cropHeight = width / targetRatio
-            cropHeight = Math.floor(width / minRatio);
-            y = Math.floor((height - cropHeight) / 2);
-            console.log(`[${platform} Compliance] Too tall. New target height: ${cropHeight}, Y-offset: ${y}`);
+        let needsCrop = false;
+        if (ratio < minRatio || ratio > maxRatio) {
+            needsCrop = true;
+            console.log(`[${platform} Compliance] Ratio ${ratio.toFixed(4)} is non-compliant. Cropping...`);
         } else {
-            // Too wide: Keep height, reduce width to reach exact ratio
-            // targetRatio = cropWidth / height => cropWidth = height * targetRatio
-            cropWidth = Math.floor(height * maxRatio);
-            x = Math.floor((width - cropWidth) / 2);
-            console.log(`[${platform} Compliance] Too wide. New target width: ${cropWidth}, X-offset: ${x}`);
+            console.log(`[${platform} Compliance] Image ratio ${ratio.toFixed(4)} is already compliant, but re-processing for format consistency.`);
         }
 
-        // Perform crop
-        image.crop(x, y, cropWidth, cropHeight);
+        if (needsCrop) {
+            let cropWidth = width;
+            let cropHeight = height;
+            let x = 0;
+            let y = 0;
 
-        // Use JPEG for best compatibility with Meta
+            if (ratio < minRatio) {
+                cropHeight = Math.floor(width / minRatio);
+                y = Math.floor((height - cropHeight) / 2);
+            } else {
+                cropWidth = Math.floor(height * maxRatio);
+                x = Math.floor((width - cropWidth) / 2);
+            }
+            image.crop(x, y, cropWidth, cropHeight);
+        }
+
+        // ALWAYS convert to JPEG and re-upload to ensure Meta sees a proper image
         const buffer = await image.getBuffer('image/jpeg');
-
-        // Upload the fixed version to Supabase with a unique timestamp to avoid any caching issues
         const fileName = `compliant_${Date.now()}_${platform.toLowerCase()}.jpg`;
-        const { data, error } = await supabase.storage.from('posts').upload(fileName, buffer, {
-            contentType: 'image/jpeg',
-            upsert: true
-        });
+        const supabaseUrl = process.env.SUPABASE_URL;
+        const supabaseKey = process.env.SUPABASE_KEY;
 
-        if (error) throw error;
+        console.log(`[${platform} Compliance] Uploading compliant JPEG to Supabase...`);
 
-        const { data: { publicUrl } } = supabase.storage.from('posts').getPublicUrl(fileName);
-        console.log(`[${platform} Compliance] Successfully uploaded compliant image: ${publicUrl}`);
+        const uploadRes = await axios.post(
+            `${supabaseUrl}/storage/v1/object/posts/${fileName}`,
+            buffer,
+            {
+                headers: {
+                    'Authorization': `Bearer ${supabaseKey}`,
+                    'apikey': supabaseKey,
+                    'Content-Type': 'image/jpeg',
+                    'x-upsert': 'true'
+                },
+                maxContentLength: Infinity,
+                maxBodyLength: Infinity,
+                validateStatus: () => true // Don't throw on non-2xx
+            }
+        );
+
+        if (uploadRes.status < 200 || uploadRes.status >= 300) {
+            console.error(`[${platform} Compliance] Supabase upload FAILED with status ${uploadRes.status}:`, JSON.stringify(uploadRes.data));
+            // Don't fall back to broken URL — throw so caller can properly handle
+            throw new Error(`Supabase upload returned status ${uploadRes.status}: ${JSON.stringify(uploadRes.data)}`);
+        }
+
+        const publicUrl = `${supabaseUrl}/storage/v1/object/public/posts/${fileName}`;
+        console.log(`[${platform} Compliance] Successfully uploaded: ${publicUrl}`);
         return publicUrl;
+
     } catch (err) {
-        console.error(`[${platform} Compliance] Critical processing failure:`, err.message);
-        return publicImageUrl; // Fallback to original and pray Meta accepts it
+        // Log detailed failure info
+        const errDetail = err.response?.data || err.message;
+        console.error(`[${platform} Compliance] Upload failure - throwing to prevent bad URL reaching Meta:`, errDetail);
+        // Re-throw so the publish function can take appropriate action (log error, mark post as failed, etc.)
+        throw new Error(`Image compliance upload failed: ${typeof errDetail === 'object' ? JSON.stringify(errDetail) : errDetail}`);
     }
 };
 
@@ -399,21 +415,23 @@ const publishToInstagram = async (caption, publicImageUrl) => {
     const compliantUrl = await ensureImageCompliance(publicImageUrl, 'Instagram');
 
     console.log(`[Instagram Graph API] Preparing to publish to Account ID: ${igAccountId}...`);
-    // Add a dummy query param ONLY if Meta might struggle to detect the file type (e.g. no extension)
+    // Ensure Meta sees a valid extension for processing
     const hasExtension = /\.(jpg|jpeg|png)$/i.test(compliantUrl.split('?')[0]);
     const finalImageUrl = hasExtension ? compliantUrl : (compliantUrl.includes('?') ? `${compliantUrl}&type=.jpg` : `${compliantUrl}?type=.jpg`);
+
     console.log(`[Instagram Graph API] Final Image URL: ${finalImageUrl}`);
 
     try {
-        // Step 1: Create a Media Container
-        // Use the body for POST parameters as per modern Meta Graph API standards
+        const payload = {
+            image_url: finalImageUrl,
+            caption: caption,
+            access_token: token
+        };
+        console.log(`[Instagram Graph API] Sending payload to Meta:`, JSON.stringify(payload, null, 2));
+
         const containerRes = await axios.post(
             `https://graph.facebook.com/v19.0/${igAccountId}/media`,
-            {
-                image_url: finalImageUrl,
-                caption: caption,
-                access_token: token
-            },
+            payload,
             {
                 timeout: 30000 // 30s timeout
             }
@@ -427,8 +445,9 @@ const publishToInstagram = async (caption, publicImageUrl) => {
 
         const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
         let attempts = 0;
-        const maxAttempts = 15; // 15 * 5s = 75 seconds total wait time
+        const maxAttempts = 30; // 30 * 5s = 150 seconds total wait time
         let isReady = false;
+        let consecutiveErrors = 0;
 
         while (attempts < maxAttempts) {
             attempts++;
@@ -437,7 +456,7 @@ const publishToInstagram = async (caption, publicImageUrl) => {
                     `https://graph.facebook.com/v19.0/${creationId}`,
                     {
                         params: {
-                            fields: 'status_code,status,error_message',
+                            fields: 'status_code,status',
                             access_token: token
                         },
                         timeout: 10000
@@ -446,12 +465,14 @@ const publishToInstagram = async (caption, publicImageUrl) => {
 
                 const status = statusRes.data.status_code;
                 console.log(`[Instagram Graph API] Attempt ${attempts}: Container status is ${status}`);
+                consecutiveErrors = 0; // Reset on loop success
 
                 if (status === 'FINISHED') {
                     isReady = true;
                     break;
                 } else if (status === 'ERROR') {
-                    const errorMsg = statusRes.data.error_message || 'Unknown processing error';
+                    // Note: error_message field is mostly deprecated, so we report a generic message if not provided
+                    const errorMsg = statusRes.data.error_message || statusRes.data.status || 'Unknown processing error';
                     throw new Error(`Meta media processing failed: ${errorMsg}`);
                 } else if (status === 'IN_PROGRESS') {
                     // Just wait more
@@ -459,9 +480,14 @@ const publishToInstagram = async (caption, publicImageUrl) => {
                     console.warn(`[Instagram Graph API] Unexpected status: ${status}`);
                 }
             } catch (err) {
-                // If the status check itself fails, we log it but keep trying if it's transient
-                console.warn(`[Instagram Graph API] Status check attempt ${attempts} failed: ${err.message}`);
+                consecutiveErrors++;
+                const errDetail = err.response?.data ? JSON.stringify(err.response.data) : err.message;
+                console.warn(`[Instagram Graph API] Status check attempt ${attempts} failed (${consecutiveErrors} consecutive): ${errDetail}`);
                 if (err.message.includes('Meta media processing failed')) throw err;
+                // After 5 consecutive failures, Meta has almost certainly rejected the container
+                if (consecutiveErrors >= 5) {
+                    throw new Error(`Meta rejected container after ${consecutiveErrors} consecutive errors. Last error: ${errDetail}`);
+                }
             }
 
             if (attempts < maxAttempts) {

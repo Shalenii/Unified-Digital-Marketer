@@ -44,10 +44,20 @@ function PostForm({ onPostCreated }) {
         let finalScheduledTime;
         if (scheduleType === 'Now') {
             finalScheduledTime = new Date();
-            // No delay for immediate publishing
         } else {
             if (!date || !time) { return alert('Please set date and time.'); }
-            finalScheduledTime = new Date(`${date}T${time}`);
+            // Construction: Combining "YYYY-MM-DD" and "HH:mm" to create a local Date object
+            // Use the hyphen and space format which is most reliable for "local" interpretation in JS
+            finalScheduledTime = new Date(`${date} ${time}`);
+
+            // Safety Check: If for some reason the date is invalid or in the past
+            if (isNaN(finalScheduledTime.getTime())) {
+                return alert('Invalid date or time selected.');
+            }
+            if (finalScheduledTime < new Date()) {
+                console.warn('Post scheduled for the past. Adjusting to current time + 1 min for safety or alerting.');
+                // Optional: alert('You cannot schedule a post in the past.');
+            }
         }
 
         setLoading(true);

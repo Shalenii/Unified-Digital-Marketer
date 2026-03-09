@@ -45,34 +45,53 @@ const runCronJob = async () => {
         const platforms = JSON.parse(post.platforms || '[]');
         const socialManager = require('./services/socialManager');
 
+        const results = [];
+        const errors = [];
+
         // 2. PROCESS: Publish to all platforms
         for (const platform of platforms) {
             try {
-                console.log(`Publishing to ${platform}...`);
+                console.log(`[Cron] Publishing to ${platform} for post ${post.id}...`);
                 await socialManager.publish(platform, post);
-                console.log(`Successfully published to ${platform}`);
+                results.push(platform);
+                console.log(`[Cron] Successfully published ${post.id} to ${platform}`);
 
                 // Add a small delay between platforms to avoid burst rate limits
                 await sleep(2000);
             } catch (pubError) {
-                console.error(`\n===========================================`);
-                console.error(`[CRON ERROR] Failed to publish to ${platform}:`);
-                console.error(pubError.stack || pubError);
-                console.error(`===========================================\n`);
+                const errMsg = pubError.message || String(pubError);
+                console.error(`[Cron Error] Failed to publish ${post.id} to ${platform}: ${errMsg}`);
+                errors.push(`${platform}: ${errMsg}`);
             }
         }
 
-        // Add a delay between posts if processing multiple
-        await sleep(3000);
+        // 3. FINALIZE: Update status with real results
+        let finalStatus;
+        let finalNotes;
 
-        // 3. FINALIZE: Update status to Published
+        if (errors.length === 0) {
+            finalStatus = 'Published';
+            finalNotes = `Published via Cron to: ${results.join(', ')}`;
+        } else if (results.length > 0) {
+            finalStatus = 'Published'; // Partial success is still "Published" but with notes
+            finalNotes = `Partial Success (Cron). OK: ${results.join(', ')} | ERR: ${errors.join('; ')}`;
+        } else {
+            finalStatus = 'Failed';
+            finalNotes = `Scheduled processing failed: ${errors.join('; ')}`;
+        }
+
+        console.log(`[Cron] Post ${post.id} final status: ${finalStatus}`);
+
         const { error: updateErr } = await supabase
             .from('posts')
-            .update({ status: 'Published' })
+            .update({
+                status: finalStatus,
+                internal_notes: finalNotes
+            })
             .eq('id', post.id);
 
         if (updateErr) console.error(`Error finalising post ${post.id}:`, updateErr);
-        else console.log(`Post ${post.id} marked as Published.`);
+        else console.log(`Post ${post.id} marked as ${finalStatus}.`);
 
         // 4. RECURRENCE: Schedule next if needed
         if (post.is_recurring) {
