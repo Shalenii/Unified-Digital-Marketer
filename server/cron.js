@@ -18,15 +18,11 @@ const runCronJob = async () => {
         return;
     }
 
-    // 0. RECOVERY: Reset any posts that have been stuck in 'Processing' for more than 5 minutes
-    // This happens if Vercel kills the serverless function before it finishes.
-    const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-    const { error: resetErr } = await supabase
-        .from('posts')
-        .update({ status: 'Pending' })
-        .eq('status', 'Processing');
+    // RECOVERY NOTE: Unconditional reset of 'Processing' posts removed from here.
+    // Instagram publishing can take over 2 minutes (Meta processing), and resetting every minute
+    // would interrupt many valid publishing attempts.
+    // Safe recovery is already handled by startCron() on server boot.
 
-    if (resetErr) console.error('Error resetting stuck Processing posts:', resetErr);
 
     if (!rows || rows.length === 0) {
         console.log('No pending posts found.');

@@ -445,7 +445,7 @@ const publishToInstagram = async (caption, publicImageUrl) => {
 
         const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
         let attempts = 0;
-        const maxAttempts = 30; // 30 * 5s = 150 seconds total wait time
+        const maxAttempts = 60; // 60 * 5s = 300 seconds (5 minutes) total wait time
         let isReady = false;
         let consecutiveErrors = 0;
 
@@ -456,16 +456,16 @@ const publishToInstagram = async (caption, publicImageUrl) => {
                     `https://graph.facebook.com/v19.0/${creationId}`,
                     {
                         params: {
-                            fields: 'status_code',
+                            fields: 'status_code,status',
                             access_token: token
                         },
                         timeout: 10000
                     }
                 );
 
-                const status = statusRes.data.status_code;
-                console.log(`[Instagram Graph API] Attempt ${attempts}: Container status is ${status}`);
-                consecutiveErrors = 0; // Reset on loop success
+                const status = statusRes.data.status_code || statusRes.data.status;
+                console.log(`[Instagram Graph API] Attempt ${attempts}/${maxAttempts}: Container status is ${status}`);
+                consecutiveErrors = 0;
 
                 if (status === 'FINISHED') {
                     isReady = true;
@@ -857,5 +857,17 @@ const disconnectWhatsApp = async () => {
     setTimeout(initializeWhatsApp, 1000);
 };
 
-module.exports = { publish, getWhatsAppStatus, getWhatsAppGroups, requestWhatsAppPairingCode, disconnectWhatsApp, ensureImageCompliance };
+module.exports = {
+    publish,
+    publishToInstagram,
+    publishToFacebook,
+    publishToTwitter,
+    publishToTelegram,
+    publishToWhatsApp,
+    getWhatsAppStatus,
+    getWhatsAppGroups,
+    requestWhatsAppPairingCode,
+    disconnectWhatsApp,
+    ensureImageCompliance
+};
 
