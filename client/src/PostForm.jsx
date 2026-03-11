@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import toast from 'react-hot-toast';
 import SourceSelector from './components/SourceSelector';
 import ContentComposer from './components/ContentComposer';
 import Scheduler from './components/Scheduler';
@@ -38,25 +39,26 @@ function PostForm({ onPostCreated }) {
         e.preventDefault();
 
         // Validation
-        if (!selectedImage) { return alert('Please select an image.'); }
-        if (selectedPlatforms.length === 0) { return alert('Please select at least one platform.'); }
+        if (!selectedImage) { toast.error('Please select an image.'); return; }
+        if (selectedPlatforms.length === 0) { toast.error('Please select at least one platform.'); return; }
 
         let finalScheduledTime;
         if (scheduleType === 'Now') {
             finalScheduledTime = new Date();
         } else {
-            if (!date || !time) { return alert('Please set date and time.'); }
+            if (!date || !time) { toast.error('Please set date and time.'); return; }
             // Construction: Combining "YYYY-MM-DD" and "HH:mm" to create a local Date object
             // Use the hyphen and space format which is most reliable for "local" interpretation in JS
             finalScheduledTime = new Date(`${date} ${time}`);
 
             // Safety Check: If for some reason the date is invalid or in the past
             if (isNaN(finalScheduledTime.getTime())) {
-                return alert('Invalid date or time selected.');
+                toast.error('Invalid date or time selected.');
+                return;
             }
             if (finalScheduledTime < new Date()) {
                 console.warn('Post scheduled for the past. Adjusting to current time + 1 min for safety or alerting.');
-                // Optional: alert('You cannot schedule a post in the past.');
+                // Optional: toast.error('You cannot schedule a post in the past.');
             }
         }
 
@@ -94,7 +96,7 @@ function PostForm({ onPostCreated }) {
             });
 
             if (res.ok) {
-                alert(`Success! Post ${scheduleType === 'Now' ? 'queued' : 'scheduled'}.`);
+                toast.success(`Success! Post ${scheduleType === 'Now' ? 'queued' : 'scheduled'}.`);
                 // Reset form optionally
                 setCaption('');
                 setHashtags('');
@@ -102,11 +104,11 @@ function PostForm({ onPostCreated }) {
                 if (onPostCreated) onPostCreated();
             } else {
                 const err = await res.json();
-                alert('Failed: ' + err.error);
+                toast.error('Failed: ' + err.error);
             }
         } catch (error) {
             console.error(error);
-            alert('Error submitting form');
+            toast.error('Error submitting form');
         } finally {
             setLoading(false);
         }

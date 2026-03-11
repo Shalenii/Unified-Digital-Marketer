@@ -496,6 +496,33 @@ app.post('/api/whatsapp/disconnect', async (req, res) => {
     }
 });
 
+// --- WhatsApp Saved Groups ---
+
+// GET /api/whatsapp/saved-groups - Get saved group IDs from config
+app.get('/api/whatsapp/saved-groups', async (req, res) => {
+    try {
+        const savedGroupsJson = configService.get('WHATSAPP_SAVED_GROUPS');
+        const groups = savedGroupsJson ? JSON.parse(savedGroupsJson) : [];
+        res.json({ groups });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST /api/whatsapp/saved-groups - Save selected group IDs to config
+app.post('/api/whatsapp/saved-groups', async (req, res) => {
+    try {
+        const { groups } = req.body; // Array of { id, name }
+        if (!Array.isArray(groups)) {
+            return res.status(400).json({ error: 'groups must be an array of { id, name }' });
+        }
+        await configService.set('WHATSAPP_SAVED_GROUPS', JSON.stringify(groups), 'WhatsApp groups to publish to');
+        res.json({ success: true, message: `Saved ${groups.length} group(s)`, groups });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // --- Admin Utilities ---
 
 // POST /api/admin/reset-stuck - Reset stuck 'Processing' posts to 'Pending'

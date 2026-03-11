@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import toast from 'react-hot-toast';
 import CalendarView from './components/CalendarView';
 import PostOptionsDropdown from './components/PostOptionsDropdown';
 import RescheduleModal from './components/RescheduleModal';
@@ -75,7 +76,7 @@ function PostList({ refreshTrigger }) {
             try {
                 const res = await fetch(`/api/posts/${id}`, { method: 'DELETE' });
                 if (res.ok) fetchPosts();
-            } catch (err) { alert('Failed to delete'); }
+            } catch (err) { toast.error('Failed to delete'); }
         } else if (action === 'pause' || action === 'resume') {
             const newStatus = action === 'pause' ? 'Paused' : 'Pending';
             try {
@@ -85,7 +86,7 @@ function PostList({ refreshTrigger }) {
                     body: JSON.stringify({ status: newStatus })
                 });
                 if (res.ok) fetchPosts();
-            } catch (err) { alert('Failed to update status'); }
+            } catch (err) { toast.error('Failed to update status'); }
         } else if (action === 'stop_recurrence') {
             if (!window.confirm('This will stop future recurring posts for this schedule. The current post will still publish once. Continue?')) return;
             try {
@@ -95,7 +96,7 @@ function PostList({ refreshTrigger }) {
                     body: JSON.stringify({ is_recurring: 0 })
                 });
                 if (res.ok) fetchPosts();
-            } catch (err) { alert('Failed to stop recurrence'); }
+            } catch (err) { toast.error('Failed to stop recurrence'); }
         } else if (action === 'reschedule') {
             const post = posts.find(p => p.id === id);
             setReschedulePost(post);

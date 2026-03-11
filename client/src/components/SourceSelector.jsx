@@ -65,12 +65,29 @@ const SourceSelector = ({ mode, setMode, onImageSelect }) => {
                     </div>
                 </div>
             ) : (
-                <div className="manual-upload-panel">
+                <div 
+                    className="manual-upload-panel" 
+                    onClick={() => document.getElementById('hidden-file-input').click()}
+                >
                     <input
+                        id="hidden-file-input"
                         type="file"
                         accept="image/png, image/jpeg"
-                        onChange={(e) => onImageSelect(e.target.files[0], URL.createObjectURL(e.target.files[0]))}
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                            if (e.target.files && e.target.files[0]) {
+                                onImageSelect(e.target.files[0], URL.createObjectURL(e.target.files[0]));
+                            }
+                        }}
                     />
+                    <div className="upload-icon-wrapper">
+                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--primary)", marginBottom: "12px" }}>
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                    </div>
+                    <h4 style={{ margin: "0 0 4px 0", fontSize: "1.1rem", color: "var(--text-main)" }}>Click to Upload Media</h4>
                     <p className="hint">Drag and drop or browse (JPG, PNG)</p>
                 </div>
             )}

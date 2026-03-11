@@ -1,12 +1,17 @@
 import React, { useState } from 'react';
+import toast from 'react-hot-toast';
 
 const RescheduleModal = ({ post, onClose, onSuccess }) => {
     const [newTime, setNewTime] = useState(post.scheduled_time ? post.scheduled_time.slice(0, 16) : '');
     const [isRecurring, setIsRecurring] = useState(!!post.is_recurring);
     const [loading, setLoading] = useState(false);
 
+
     const handleSave = async () => {
-        if (!newTime) return alert('Please select a time');
+        if (!newTime) {
+            toast.error('Please select a time');
+            return;
+        }
         setLoading(true);
 
         try {
@@ -30,14 +35,14 @@ const RescheduleModal = ({ post, onClose, onSuccess }) => {
             if (res.ok) {
                 onSuccess();
                 onClose();
-                alert('Post updated successfully!');
+                toast.success('Post updated successfully!');
             } else {
                 const err = await res.json(); // Safely try to parse JSON, or fallback? server usually sends JSON
-                alert('Failed to update');
+                toast.error('Failed to update');
             }
         } catch (error) {
             console.error(error);
-            alert('Error updating post');
+            toast.error('Error updating post');
         } finally {
             setLoading(false);
         }

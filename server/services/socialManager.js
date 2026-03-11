@@ -32,16 +32,30 @@ const initializeWhatsApp = () => {
         let executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
 
         if (!executablePath) {
-            try {
-                const isWin = process.platform === 'win32';
-                // Only try 'which' on non-windows systems
-                if (!isWin) {
+            const isWin = process.platform === 'win32';
+            if (isWin) {
+                // Auto-detect Chrome on Windows
+                const fs = require('fs');
+                const winPaths = [
+                    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+                    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+                    process.env.LOCALAPPDATA + '\\Google\\Chrome\\Application\\chrome.exe',
+                ];
+                for (const p of winPaths) {
+                    if (p && fs.existsSync(p)) {
+                        executablePath = p;
+                        console.log(`[WhatsApp] Auto-detected Chrome on Windows: ${executablePath}`);
+                        break;
+                    }
+                }
+            } else {
+                try {
                     const { execSync } = require('child_process');
                     executablePath = execSync('which chromium || which chromium-browser || which google-chrome-stable || which google-chrome', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
                     console.log(`[WhatsApp] Auto-detected Chromium: ${executablePath}`);
+                } catch (e) {
+                    // Silently skip if detection fails
                 }
-            } catch (e) {
-                // Silently skip if detection fails
             }
         }
         console.log(`[WhatsApp] Using Chromium from env: ${executablePath}`);
@@ -685,93 +699,81 @@ const publishToTelegram = async (caption, imageBuffer, post, publicImageUrl) => 
 };
 
 const publishToWhatsApp = async (caption, imageBuffer, contentType, originalFilename, post, publicImageUrl) => {
-    const accessToken = configService.get('WHATSAPP_ACCESS_TOKEN');
-    const phoneNumberId = configService.get('WHATSAPP_PHONE_NUMBER_ID');
-
-    if (!accessToken || accessToken === 'your_whatsapp_access_token') {
-        throw new Error('WhatsApp Business API credentials (WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID) are not configured.');
+    // Ensure whatsapp-web.js client is ready
+    if (!whatsappClient || !isWhatsAppReady) {
+        throw new Error('WhatsApp is not connected. Please scan the QR code in Settings first.');
     }
 
-    // Collect target phone numbers from platform settings
-    let targetNumbers = [];
-
+    // Collect target group IDs from per-post platform settings
+    let targetGroups = [];
     try {
         const platformSettings = typeof post.platform_settings === 'string'
             ? JSON.parse(post.platform_settings)
             : (post.platform_settings || {});
 
-        if (platformSettings.WhatsApp && platformSettings.WhatsApp.numbers) {
-            targetNumbers = platformSettings.WhatsApp.numbers.split(',')
-                .map(n => n.trim().replace(/\+/g, '').replace(/[^0-9]/g, ''))
-                .filter(Boolean);
+        if (platformSettings.WhatsApp && platformSettings.WhatsApp.groups && platformSettings.WhatsApp.groups.length > 0) {
+            targetGroups = platformSettings.WhatsApp.groups; // Array of { id, name }
         }
     } catch (e) {
-        console.warn('[WhatsApp Cloud] Could not parse platform_settings for numbers.');
+        console.warn('[WhatsApp Web] Could not parse platform_settings for groups.');
     }
 
-    // Fallback to env
-    if (targetNumbers.length === 0) {
-        const envNumber = configService.get('WHATSAPP_TO_PHONE');
-        if (envNumber) targetNumbers = [envNumber.replace(/[^0-9]/g, '')];
+    // Fallback: Use saved groups from config
+    if (targetGroups.length === 0) {
+        try {
+            const savedGroupsJson = configService.get('WHATSAPP_SAVED_GROUPS');
+            if (savedGroupsJson) {
+                targetGroups = JSON.parse(savedGroupsJson);
+            }
+        } catch (e) {
+            console.warn('[WhatsApp Web] Could not parse saved groups from config.');
+        }
     }
 
-    if (targetNumbers.length === 0) {
-        throw new Error('No WhatsApp phone numbers specified. Add numbers in post settings or set WHATSAPP_TO_PHONE in env.');
+    if (targetGroups.length === 0) {
+        throw new Error('No WhatsApp groups selected. Please select groups in Settings or in the post WhatsApp settings.');
     }
 
+    // Get the image buffer (download from URL if needed)
     let fetchBuffer = imageBuffer;
     if (!fetchBuffer && publicImageUrl) {
-        console.log(`[WhatsApp] Downloading deferred buffer from ${publicImageUrl}...`);
+        console.log(`[WhatsApp Web] Downloading image from ${publicImageUrl}...`);
         const response = await axios.get(publicImageUrl, { responseType: 'arraybuffer', timeout: 30000 });
         fetchBuffer = Buffer.from(response.data, 'binary');
     }
 
-    // Step 1: Upload the image to Meta's media endpoint to get a media ID
-    console.log(`[WhatsApp Cloud API] Uploading image for media ID...`);
-    const uploadForm = new FormData();
-    uploadForm.append('file', fetchBuffer, { filename: originalFilename || 'image.jpg', contentType });
-    uploadForm.append('messaging_product', 'whatsapp');
-    uploadForm.append('type', contentType);
+    if (!fetchBuffer) {
+        throw new Error('No image buffer available for WhatsApp publishing.');
+    }
 
-    const uploadRes = await axios.post(
-        `https://graph.facebook.com/v19.0/${phoneNumberId}/media`,
-        uploadForm,
-        { headers: { ...uploadForm.getHeaders(), Authorization: `Bearer ${accessToken}` }, timeout: 30000 }
-    );
-    const mediaId = uploadRes.data.id;
-    console.log(`[WhatsApp Cloud API] Got media ID: ${mediaId}`);
+    // Create MessageMedia from buffer
+    const { MessageMedia } = require('whatsapp-web.js');
+    const mimeType = contentType || 'image/jpeg';
+    const base64Data = fetchBuffer.toString('base64');
+    const media = new MessageMedia(mimeType, base64Data, originalFilename || 'image.jpg');
 
-    // Step 2: Send image + caption to each phone number
-    const fullCaption = caption;
+    console.log(`[WhatsApp Web] Sending to ${targetGroups.length} group(s)...`);
     let successCount = 0;
     const errors = [];
 
-    for (const number of targetNumbers) {
+    for (const group of targetGroups) {
+        const groupId = typeof group === 'string' ? group : group.id;
+        const groupName = typeof group === 'string' ? groupId : group.name;
         try {
-            await axios.post(
-                `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`,
-                {
-                    messaging_product: 'whatsapp',
-                    to: number,
-                    type: 'image',
-                    image: { id: mediaId, caption: fullCaption }
-                },
-                { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 15000 }
-            );
-            console.log(`[WhatsApp Cloud API] Sent to ${number} ✅`);
+            await whatsappClient.sendMessage(groupId, media, { caption });
+            console.log(`[WhatsApp Web] Sent to "${groupName}" ✅`);
             successCount++;
         } catch (err) {
-            const errMsg = err.response?.data?.error?.message || err.message;
-            console.error(`[WhatsApp Cloud API] Failed to send to ${number}:`, errMsg);
-            errors.push(`${number}: ${errMsg}`);
+            console.error(`[WhatsApp Web] Failed to send to "${groupName}":`, err.message);
+            errors.push(`${groupName}: ${err.message}`);
         }
     }
 
     if (successCount === 0) {
-        throw new Error(`WhatsApp Cloud API failed for all numbers. Errors: ${errors.join(' | ')}`);
+        throw new Error(`WhatsApp failed for all groups. Errors: ${errors.join(' | ')}`);
     }
 
-    return { success: true, platform: 'WhatsApp', id: mediaId, partialErrors: errors.length > 0 ? errors : undefined };
+    return { success: true, platform: 'WhatsApp', sentTo: successCount, partialErrors: errors.length > 0 ? errors : undefined };
 };
 
 

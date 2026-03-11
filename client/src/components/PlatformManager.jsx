@@ -38,19 +38,19 @@ const PlatformManager = ({ selectedPlatforms, setSelectedPlatforms, platformSett
     const [loadingTelegramChats, setLoadingTelegramChats] = useState(false);
     const [telegramError, setTelegramError] = useState(null);
 
-    // Fetch WhatsApp groups if WhatsApp is selected
+    // Fetch saved WhatsApp groups from config if WhatsApp is selected
     useEffect(() => {
         if (selectedPlatforms.includes('WhatsApp') && whatsappGroups.length === 0) {
             setLoadingGroups(true);
             setGroupError(null);
-            fetch('/api/whatsapp/groups')
+            fetch('/api/whatsapp/saved-groups')
                 .then(res => res.json())
                 .then(data => {
                     if (data.error) throw new Error(data.error);
                     setWhatsappGroups(data.groups || []);
                 })
                 .catch(err => {
-                    console.error("Failed to load WhatsApp groups:", err);
+                    console.error("Failed to load saved WhatsApp groups:", err);
                     setGroupError(err.message);
                 })
                 .finally(() => setLoadingGroups(false));
@@ -89,15 +89,16 @@ const PlatformManager = ({ selectedPlatforms, setSelectedPlatforms, platformSett
         }
     };
 
-    const toggleWhatsAppGroup = (groupName) => {
+    const toggleWhatsAppGroup = (group) => {
         const currentWaSettings = platformSettings['WhatsApp'] || { groups: [] };
         const currentGroups = currentWaSettings.groups || [];
 
+        const isSelected = currentGroups.some(g => g.id === group.id);
         let newGroups;
-        if (currentGroups.includes(groupName)) {
-            newGroups = currentGroups.filter(g => g !== groupName);
+        if (isSelected) {
+            newGroups = currentGroups.filter(g => g.id !== group.id);
         } else {
-            newGroups = [...currentGroups, groupName];
+            newGroups = [...currentGroups, { id: group.id, name: group.name }];
         }
 
         handleSettingChange('WhatsApp', 'groups', newGroups);
@@ -256,11 +257,11 @@ const PlatformManager = ({ selectedPlatforms, setSelectedPlatforms, platformSett
                             <div className="whatsapp-modal-section">
                                 <h4 className="selector-title" style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>Select WhatsApp Groups:</h4>
 
-                                {loadingGroups && <div className="loading-text">Loading groups...</div>}
-                                {groupError && <div className="error-text" style={{ color: 'var(--error)', marginBottom: '1rem' }}>Connection Error: {groupError}</div>}
+                                {loadingGroups && <div className="loading-text">Loading saved groups...</div>}
+                                {groupError && <div className="error-text" style={{ color: 'var(--error)', marginBottom: '1rem' }}>Error: {groupError}. Go to Settings to connect WhatsApp first.</div>}
 
                                 {!loadingGroups && !groupError && whatsappGroups.length === 0 && (
-                                    <div className="empty-text">No groups found. Please make sure the bot is joined to groups.</div>
+                                    <div className="empty-text">No saved groups found. Go to Settings → WhatsApp Web to connect and save groups first.</div>
                                 )}
 
                                 {!loadingGroups && whatsappGroups.length > 0 && (
@@ -275,8 +276,8 @@ const PlatformManager = ({ selectedPlatforms, setSelectedPlatforms, platformSett
                                             }}>
                                                 <input
                                                     type="checkbox"
-                                                    checked={(platformSettings['WhatsApp']?.groups || []).includes(grp.name)}
-                                                    onChange={() => toggleWhatsAppGroup(grp.name)}
+                                                    checked={(platformSettings['WhatsApp']?.groups || []).some(g => g.id === grp.id)}
+                                                    onChange={() => toggleWhatsAppGroup(grp)}
                                                     style={{ width: '22px', height: '22px', accentColor: 'var(--primary)' }}
                                                 />
                                                 <span className="group-display-name" style={{ fontSize: '1.1rem' }}>{grp.name}</span>
@@ -284,25 +285,6 @@ const PlatformManager = ({ selectedPlatforms, setSelectedPlatforms, platformSett
                                         ))}
                                     </div>
                                 )}
-
-                                <div className="direct-numbers-box" style={{ marginTop: '2.5rem' }}>
-                                    <h4 className="selector-title" style={{ fontSize: '1.1rem', marginBottom: '0.8rem' }}>Send to Direct Numbers:</h4>
-                                    <input
-                                        type="text"
-                                        className="direct-numbers-input"
-                                        placeholder="e.g. 919876543210, 14155552671"
-                                        value={platformSettings['WhatsApp']?.numbers || ''}
-                                        onChange={(e) => handleSettingChange('WhatsApp', 'numbers', e.target.value)}
-                                        style={{
-                                            width: '100%', padding: '1.2rem', borderRadius: '16px',
-                                            background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
-                                            color: 'white', marginBottom: '0.8rem', fontSize: '1rem'
-                                        }}
-                                    />
-                                    <div className="helper-text" style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: '1.4' }}>
-                                        Include country code without '+' (e.g. 91 for India, 1 for US). Separate by commas.
-                                    </div>
-                                </div>
                             </div>
                         )}
 
