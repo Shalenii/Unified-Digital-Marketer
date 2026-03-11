@@ -218,8 +218,20 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
         // If immediate, trigger publishing logic NOW
         if (initialStatus === 'Processing') {
             try {
+                // START STREAMING RESPONSE
+                res.setHeader('Content-Type', 'application/x-ndjson');
+                res.setHeader('Transfer-Encoding', 'chunked');
+
                 const socialManager = require('./services/socialManager');
                 const platformList = JSON.parse(platforms || '[]');
+                
+                // Emit initial start state
+                res.write(JSON.stringify({ 
+                    type: 'start', 
+                    totalPlatforms: platformList.length, 
+                    post: post 
+                }) + '\n');
+
                 const results = [];
                 const errors = [];
 
@@ -230,15 +242,38 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
                     for (const p of platformList) {
                         try {
                             console.log(`[Publishing] Starting ${p} for post ${post.id}`);
+                            
+                            // Emit progress start for this platform
+                            res.write(JSON.stringify({
+                                type: 'progress',
+                                platform: p,
+                                status: 'publishing'
+                            }) + '\n');
+
                             await socialManager.publish(p, post);
                             results.push(p);
                             console.log(`[Publishing] ${p} success for post ${post.id}`);
+
+                            // Emit progress success
+                            res.write(JSON.stringify({
+                                type: 'progress',
+                                platform: p,
+                                status: 'success'
+                            }) + '\n');
 
                             // Add delay between platforms (2 seconds)
                             await sleep(2000);
                         } catch (pubErr) {
                             console.error(`[Publishing] ${p} FAILED:`, pubErr.message);
                             errors.push(`${p}: ${pubErr.message}`);
+                            
+                            // Emit progress error
+                            res.write(JSON.stringify({
+                                type: 'progress',
+                                platform: p,
+                                status: 'error',
+                                error: pubErr.message
+                            }) + '\n');
                         }
                     }
                 } catch (loopErr) {
@@ -262,10 +297,15 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
 
                 await supabase.from('posts').update({ status: finalStatus, internal_notes: finalNotes }).eq('id', post.id);
 
-                res.json({
+                // Emit completion event
+                res.write(JSON.stringify({
+                    type: 'complete',
                     message: errors.length === 0 ? 'Post published successfully!' : 'Post published with some errors.',
-                    post: { ...post, status: finalStatus, internal_notes: finalNotes }
-                });
+                    post: { ...post, status: finalStatus, internal_notes: finalNotes },
+                    hasErrors: errors.length > 0
+                }) + '\n');
+                
+                res.end();
             } catch (publishSystemError) {
                 console.error('[CRITICAL] Publishing system crashed:', publishSystemError);
                 await supabase.from('posts').update({
@@ -273,12 +313,16 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
                     internal_notes: `System Error: ${publishSystemError.message || publishSystemError}`
                 }).eq('id', post.id);
 
-                res.status(500).json({
+                // If headers haven't been sent yet, we could use res.status, but since it's a stream:
+                res.write(JSON.stringify({
+                    type: 'error',
                     error: 'Publishing failed due to internal error',
                     detail: publishSystemError.message
-                });
+                }) + '\n');
+                res.end();
             }
         } else {
+            // Non-immediate uses standard JSON response
             res.json({ message: 'Post scheduled successfully', post });
         }
 

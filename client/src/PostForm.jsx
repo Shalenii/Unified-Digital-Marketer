@@ -29,6 +29,7 @@ function PostForm({ onPostCreated }) {
     const [platformSettings, setPlatformSettings] = useState({});
 
     const [loading, setLoading] = useState(false);
+    const [publishJob, setPublishJob] = useState(null);
 
     const handleImageSelect = (imgData, url) => {
         setSelectedImage(imgData);
@@ -95,16 +96,96 @@ function PostForm({ onPostCreated }) {
                 body: formData
             });
 
-            if (res.ok) {
-                toast.success(`Success! Post ${scheduleType === 'Now' ? 'queued' : 'scheduled'}.`);
-                // Reset form optionally
-                setCaption('');
-                setHashtags('');
-                setInternalNotes('');
-                if (onPostCreated) onPostCreated();
+            // Check if response is a stream (NDJSON)
+            const contentType = res.headers.get('content-type');
+            if (contentType && contentType.includes('application/x-ndjson')) {
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder('utf-8');
+                let buffer = '';
+
+                // Initialize Progress State
+                setPublishJob({
+                    active: true,
+                    totalPlatforms: selectedPlatforms.length,
+                    completed: 0,
+                    currentPlatform: 'Initializing...',
+                    status: 'processing', // processing, success, error
+                    logs: []
+                });
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop(); // Keep the last incomplete line in the buffer
+
+                    for (const line of lines) {
+                        if (!line.trim()) continue;
+                        try {
+                            const event = JSON.parse(line);
+                            
+                            setPublishJob(prev => {
+                                const newJob = { ...prev };
+                                
+                                if (event.type === 'start') {
+                                    newJob.totalPlatforms = event.totalPlatforms;
+                                } else if (event.type === 'progress') {
+                                    if (event.status === 'publishing') {
+                                        newJob.currentPlatform = event.platform;
+                                        newJob.logs = [...newJob.logs, `Publishing to ${event.platform}...`];
+                                    } else if (event.status === 'success') {
+                                        newJob.completed += 1;
+                                        newJob.logs = [...newJob.logs, `✅ Success: ${event.platform}`];
+                                    } else if (event.status === 'error') {
+                                        newJob.completed += 1;
+                                        newJob.logs = [...newJob.logs, `❌ Failed: ${event.platform} - ${event.error}`];
+                                    }
+                                } else if (event.type === 'complete') {
+                                    newJob.status = event.hasErrors ? 'error' : 'success';
+                                    newJob.currentPlatform = 'Done!';
+                                    if (!event.hasErrors) {
+                                        toast.success('All platforms published successfully!');
+                                    } else {
+                                        toast.error('Published with some errors. Check logs.');
+                                    }
+                                    
+                                    // Reset form on complete
+                                    setCaption('');
+                                    setHashtags('');
+                                    setInternalNotes('');
+                                    if (onPostCreated) onPostCreated();
+
+                                    // Auto close after 3 seconds if success
+                                    if (!event.hasErrors) {
+                                        setTimeout(() => setPublishJob(null), 3000);
+                                    }
+                                } else if (event.type === 'error') {
+                                    newJob.status = 'error';
+                                    newJob.logs = [...newJob.logs, `💥 Critical Error: ${event.error}`];
+                                    toast.error('Critical publishing error.');
+                                }
+                                
+                                return newJob;
+                            });
+                        } catch (e) {
+                            console.error('Failed to parse NDJSON line:', line, e);
+                        }
+                    }
+                }
             } else {
-                const err = await res.json();
-                toast.error('Failed: ' + err.error);
+                // Handle standard JSON response (for Scheduled posts)
+                if (res.ok) {
+                    toast.success(`Success! Post ${scheduleType === 'Now' ? 'queued' : 'scheduled'}.`);
+                    setCaption('');
+                    setHashtags('');
+                    setInternalNotes('');
+                    if (onPostCreated) onPostCreated();
+                } else {
+                    const err = await res.json();
+                    toast.error('Failed: ' + err.error);
+                }
             }
         } catch (error) {
             console.error(error);
@@ -114,9 +195,59 @@ function PostForm({ onPostCreated }) {
         }
     };
 
+    // --- Progress Modal Component ---
+    const renderProgressModal = () => {
+        if (!publishJob || !publishJob.active) return null;
+
+        const progressPercent = publishJob.totalPlatforms > 0 
+            ? Math.round((publishJob.completed / publishJob.totalPlatforms) * 100) 
+            : 0;
+
+        return (
+            <div className="publish-modal-overlay">
+                <div className="publish-modal-content">
+                    <h2 className="modal-title" style={{ fontSize: '1.5rem', marginBottom: '0.5rem', color: 'var(--text-main)', textAlign: 'center' }}>
+                        {publishJob.status === 'processing' && '🚀 Publishing Post...'}
+                        {publishJob.status === 'success' && '✨ Publish Complete!'}
+                        {publishJob.status === 'error' && '⚠️ Publish Finished (with errors)'}
+                    </h2>
+                    
+                    <p className="current-action" style={{ textAlign: 'center', color: 'var(--primary)', fontWeight: '600', marginBottom: '1.5rem' }}>
+                        {publishJob.currentPlatform}
+                    </p>
+
+                    <div className="progress-bar-container">
+                        <div 
+                            className={`progress-fill ${publishJob.status}`} 
+                            style={{ width: `${progressPercent}%` }}
+                        ></div>
+                    </div>
+                    <p className="progress-text" style={{ textAlign: 'center', fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.5rem', marginBottom: '1.5rem' }}>
+                        {progressPercent}% ({publishJob.completed}/{publishJob.totalPlatforms} platforms)
+                    </p>
+
+                    <div className="publish-logs" style={{ background: 'rgba(0,0,0,0.3)', borderRadius: '12px', padding: '1rem', maxHeight: '150px', overflowY: 'auto', fontSize: '0.85rem', fontFamily: 'monospace', color: 'var(--text-muted)' }}>
+                        {publishJob.logs.map((log, i) => (
+                            <div key={i} className="log-line" style={{ marginBottom: '4px' }}>{log}</div>
+                        ))}
+                    </div>
+
+                    {publishJob.status !== 'processing' && (
+                        <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
+                            <button type="button" className="primary-btn" onClick={() => setPublishJob(null)} style={{ width: 'auto', padding: '0.8rem 2rem' }}>
+                                Close Window
+                            </button>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    };
+
     return (
 
         <form onSubmit={handleSubmit} className="dashboard-grid">
+            {renderProgressModal()}
             {/* Row 1: Source & Composer */}
             <div className="row-top">
                 <div className="col-source">
